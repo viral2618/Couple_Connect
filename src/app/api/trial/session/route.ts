@@ -5,7 +5,7 @@ const TRIAL_DURATION = 20 * 60 // 20 minutes in seconds
 
 export async function POST(request: NextRequest) {
   try {
-    const { fingerprint } = await request.json()
+    const { fingerprint, resetTimer } = await request.json()
 
     if (!fingerprint) {
       return NextResponse.json({ error: 'Fingerprint required' }, { status: 400 })
@@ -24,6 +24,20 @@ export async function POST(request: NextRequest) {
           usedSeconds: 0
         }
       })
+    } else if (resetTimer && session.usedSeconds < TRIAL_DURATION) {
+      // Only allow reset if trial hasn't been fully used
+      session = await prisma.trialSession.update({
+        where: { fingerprint },
+        data: { usedSeconds: 0 }
+      })
+    } else if (resetTimer && session.usedSeconds >= TRIAL_DURATION) {
+      // Trial already fully used, cannot reset
+      return NextResponse.json({
+        timeRemaining: 0,
+        isExpired: true,
+        trialExhausted: true,
+        sessionId: session.id
+      })
     }
 
     const timeRemaining = Math.max(0, TRIAL_DURATION - session.usedSeconds)
@@ -32,6 +46,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       timeRemaining,
       isExpired,
+      trialExhausted: session.usedSeconds >= TRIAL_DURATION,
       sessionId: session.id
     })
   } catch (error) {

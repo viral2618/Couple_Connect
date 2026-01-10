@@ -26,26 +26,36 @@ export default function HomePage() {
   const [fingerprint, setFingerprint] = useState<string | null>(null)
   const [showProfileDropdown, setShowProfileDropdown] = useState(false)
   const [showModal, setShowModal] = useState(false)
+  const [resetTimer, setResetTimer] = useState(false)
+  
+  const [trialExhausted, setTrialExhausted] = useState(false)
+  
   // Only run trial timer for non-authenticated users
-  const { timeRemaining, isExpired } = useTrialTimer(authUser ? null : fingerprint)
+  const { timeRemaining, isExpired, trialExhausted: isTrialExhausted } = useTrialTimer(authUser ? null : fingerprint, resetTimer)
 
   useEffect(() => {
     // Only generate fingerprint for non-authenticated users
     if (!authUser) {
+      // Check if this is a fresh trial start
+      const freshStart = sessionStorage.getItem('freshTrialStart')
+      if (freshStart) {
+        setResetTimer(true)
+        sessionStorage.removeItem('freshTrialStart')
+      }
       generateFingerprint().then(setFingerprint)
     }
   }, [authUser])
 
   useEffect(() => {
     // Only show trial modals for non-authenticated users
-    if (!authUser) {
+    if (!authUser && !isTrialExhausted) {
       if (isExpired) {
         setShowModal(true)
       } else if (timeRemaining <= 300 && timeRemaining > 0) {
         setShowModal(true)
       }
     }
-  }, [isExpired, timeRemaining, authUser])
+  }, [isExpired, timeRemaining, authUser, isTrialExhausted])
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -138,7 +148,32 @@ export default function HomePage() {
         </div>
       </header>
 
-      {!authUser && <TrialBanner timeRemaining={timeRemaining} onSignUp={() => router.push('/login')} />}
+      {!authUser && !isTrialExhausted && <TrialBanner timeRemaining={timeRemaining} onSignUp={() => router.push('/login')} />}
+
+      {/* Trial Exhausted Message */}
+      {!authUser && isTrialExhausted && (
+        <div className="bg-gray-800 text-white">
+          <div className="max-w-6xl mx-auto px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center">
+                  <span className="text-white font-bold">!</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold">Free Trial Expired</h3>
+                  <p className="text-sm opacity-90">You've used your 20-minute free trial. Sign up to continue using Couple Connect.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => router.push('/login')}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg font-semibold transition-colors"
+              >
+                Sign Up Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">

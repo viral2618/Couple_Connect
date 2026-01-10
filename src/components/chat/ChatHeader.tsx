@@ -7,9 +7,10 @@ interface ChatHeaderProps {
     avatar?: string
   }
   isOnline: boolean
+  onVideoCall?: () => void
 }
 
-export default function ChatHeader({ partner, isOnline }: ChatHeaderProps) {
+export default function ChatHeader({ partner, isOnline, onVideoCall }: ChatHeaderProps) {
   return (
     <div className="bg-white/80 backdrop-blur-md border-b border-rose-200/50 p-4 flex items-center justify-between shadow-lg">
       <div className="flex items-center space-x-3">
@@ -31,6 +32,16 @@ export default function ChatHeader({ partner, isOnline }: ChatHeaderProps) {
             {isOnline ? '💕 Online' : '💤 Offline'}
           </p>
         </div>
+      </div>
+      
+      <div className="flex items-center space-x-2">
+        <button
+          onClick={onVideoCall}
+          className="p-3 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full hover:shadow-lg transition-all duration-300 hover:scale-105"
+          title="Start Video Call"
+        >
+          📹
+        </button>
       </div>
     </div>
   )

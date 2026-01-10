@@ -19,6 +19,27 @@ export default function LandingPage() {
   }, [])
 
   const startTrial = async () => {
+    // Check if user has already exhausted their trial
+    try {
+      const fingerprint = await import('@/lib/fingerprint').then(m => m.generateFingerprint())
+      const response = await fetch('/api/trial/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fingerprint })
+      })
+      const data = await response.json()
+      
+      if (data.trialExhausted) {
+        // Redirect to login if trial is exhausted
+        router.push('/login')
+        return
+      }
+    } catch (error) {
+      console.error('Trial check error:', error)
+    }
+    
+    // Set flag to indicate fresh trial start
+    sessionStorage.setItem('freshTrialStart', 'true')
     router.push('/home')
   }
 
@@ -58,7 +79,7 @@ export default function LandingPage() {
           {[
             { icon: '💬', title: 'Real-time Chat', desc: 'Send messages instantly' },
             { icon: '📹', title: 'Video Calls', desc: 'Face-to-face conversations' },
-            { icon: '🎮', title: 'Couple Games', desc: 'Play fun games together', link: '/games' },
+            { icon: '🎮', title: 'Couple Games', desc: 'Play fun games together', link: '/couples-game' },
             { icon: '📸', title: 'Photo Sharing', desc: 'Share your moments' },
             { icon: '💝', title: 'Love Notes', desc: 'Send sweet messages' },
             { icon: '🗓️', title: 'Shared Calendar', desc: 'Plan dates together' }

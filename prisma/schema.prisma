@@ -67,11 +67,13 @@ model Partnership {
 model GameRoom {
   id           String   @id @default(auto()) @map("_id") @db.ObjectId
   roomId       String   @unique
+  gameType     String   @default("confession")
   hostId       String   @db.ObjectId
   players      Json[]   @default([])
   gameState    String   @default("waiting")
   currentRound Int      @default(1)
   statements   Json     @default("{}")
+  confessions  Json     @default("{}")
   scores       Json     @default("{}")
   guesses      Json     @default("{}")
   isActive     Boolean  @default(true)

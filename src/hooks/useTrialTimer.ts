@@ -4,10 +4,12 @@ import { usePageVisibility } from './usePageVisibility'
 const TRIAL_DURATION = 20 * 60
 const UPDATE_INTERVAL = 10000 // 10 seconds
 
-export function useTrialTimer(fingerprint: string | null) {
+export function useTrialTimer(fingerprint: string | null, resetTimer = false) {
   const [timeRemaining, setTimeRemaining] = useState(TRIAL_DURATION)
   const [isExpired, setIsExpired] = useState(false)
+  const [trialExhausted, setTrialExhausted] = useState(false)
   const [lastUpdate, setLastUpdate] = useState(Date.now())
+  const [localTimeRemaining, setLocalTimeRemaining] = useState(TRIAL_DURATION)
   const isVisible = usePageVisibility()
 
   const syncWithServer = useCallback(async (secondsToAdd = 0) => {
@@ -23,22 +25,43 @@ export function useTrialTimer(fingerprint: string | null) {
         })
         const data = await response.json()
         setTimeRemaining(data.timeRemaining)
+        setLocalTimeRemaining(data.timeRemaining)
         setIsExpired(data.isExpired)
+        setTrialExhausted(data.trialExhausted || false)
       } else {
         // Get current session state
         const response = await fetch('/api/trial/session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fingerprint })
+          body: JSON.stringify({ fingerprint, resetTimer })
         })
         const data = await response.json()
         setTimeRemaining(data.timeRemaining)
+        setLocalTimeRemaining(data.timeRemaining)
         setIsExpired(data.isExpired)
+        setTrialExhausted(data.trialExhausted || false)
       }
     } catch (error) {
       console.error('Trial sync error:', error)
     }
-  }, [fingerprint])
+  }, [fingerprint, resetTimer])
+
+  // Local countdown timer for UI updates
+  useEffect(() => {
+    if (!fingerprint || isExpired || !isVisible || trialExhausted) return
+
+    const countdownInterval = setInterval(() => {
+      setLocalTimeRemaining(prev => {
+        const newTime = Math.max(0, prev - 1)
+        if (newTime === 0) {
+          setIsExpired(true)
+        }
+        return newTime
+      })
+    }, 1000)
+
+    return () => clearInterval(countdownInterval)
+  }, [fingerprint, isExpired, isVisible, trialExhausted])
 
   useEffect(() => {
     if (!fingerprint) return
@@ -48,7 +71,7 @@ export function useTrialTimer(fingerprint: string | null) {
 
     let intervalId: NodeJS.Timeout
 
-    if (isVisible && !isExpired) {
+    if (isVisible && !isExpired && !trialExhausted) {
       intervalId = setInterval(() => {
         const now = Date.now()
         const secondsElapsed = Math.floor((now - lastUpdate) / 1000)
@@ -71,7 +94,7 @@ export function useTrialTimer(fingerprint: string | null) {
         }
       }
     }
-  }, [fingerprint, isVisible, isExpired, lastUpdate, syncWithServer])
+  }, [fingerprint, isVisible, isExpired, lastUpdate, syncWithServer, resetTimer, trialExhausted])
 
-  return { timeRemaining, isExpired }
+  return { timeRemaining: localTimeRemaining, isExpired, trialExhausted }
 }
