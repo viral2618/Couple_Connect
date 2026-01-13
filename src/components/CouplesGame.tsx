@@ -104,7 +104,7 @@ export default function CouplesGame({ userId, userName }: CouplesGameProps) {
     newSocket.on('round-result', (data) => {
       console.log('Round result:', data)
       // Show answers from both players
-      setCurrentGameData(prev => ({ ...prev, ...data, showResults: true }))
+      setCurrentGameData((prev: any) => ({ ...prev, ...data, showResults: true }))
     })
 
     newSocket.on('new-round', (data) => {
@@ -120,6 +120,17 @@ export default function CouplesGame({ userId, userName }: CouplesGameProps) {
       console.log('Game finished:', room)
       setGameRoom(room)
       setGamePhase('finished')
+    })
+
+    newSocket.on('love-addiction-started', (gameStartData) => {
+      console.log('Love Addiction game started:', gameStartData)
+      setGameRoom(gameStartData.room || gameStartData)
+      setGamePhase('playing')
+      // Ensure gameType is set for Love Addiction
+      setCurrentGameData({
+        ...gameStartData,
+        gameType: 'love-addiction'
+      })
     })
 
     newSocket.on('error', (error: any) => {
@@ -170,11 +181,18 @@ export default function CouplesGame({ userId, userName }: CouplesGameProps) {
 
   const startGame = (gameType: string) => {
     if (socket && gameRoom && isHost) {
-      socket.emit('start-couples-game', {
-        roomId: gameRoom.id,
-        gameType,
-        rounds: 3
-      })
+      if (gameType === 'love-addiction') {
+        socket.emit('start-love-addiction', {
+          roomId: gameRoom.id,
+          gameMode: 'progressive'
+        })
+      } else {
+        socket.emit('start-couples-game', {
+          roomId: gameRoom.id,
+          gameType,
+          rounds: 3
+        })
+      }
     }
   }
 
@@ -409,6 +427,28 @@ export default function CouplesGame({ userId, userName }: CouplesGameProps) {
                   </motion.button>
 
                   <motion.button
+                    onClick={() => startGame('love-addiction')}
+                    className="group relative bg-white rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border border-gray-100"
+                    whileHover={{ scale: 1.02, y: -2 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <div className="text-center space-y-4">
+                      <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-pink-500 rounded-xl flex items-center justify-center text-xl mx-auto shadow-md">
+                        💕
+                      </div>
+                      <div>
+                        <h4 className="text-lg font-bold text-gray-800 mb-2">Love Addiction</h4>
+                        <p className="text-gray-600 text-sm leading-relaxed">The most addictive couples game with levels & achievements</p>
+                      </div>
+                      <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center group-hover:bg-red-100 transition-colors mx-auto">
+                        <svg className="w-3 h-3 text-gray-400 group-hover:text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    </div>
+                  </motion.button>
+
+                  <motion.button
                     onClick={() => startGame('love-questions')}
                     className="group relative bg-white rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border border-gray-100"
                     whileHover={{ scale: 1.02, y: -2 }}
@@ -466,6 +506,23 @@ export default function CouplesGame({ userId, userName }: CouplesGameProps) {
                       </div>
                     </div>
                   </div>
+
+                  <div className="relative bg-white rounded-2xl p-6 shadow-lg border border-gray-100 opacity-60">
+                    <div className="text-center space-y-4">
+                      <div className="w-12 h-12 bg-gray-200 rounded-xl flex items-center justify-center text-xl mx-auto">
+                        💕
+                      </div>
+                      <div>
+                        <h4 className="text-lg font-bold text-gray-500 mb-2">Love Addiction</h4>
+                        <p className="text-gray-400 text-sm leading-relaxed">Addictive couples game</p>
+                      </div>
+                      <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center mx-auto">
+                        <svg className="w-3 h-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
                 </>
               )}
             </div>
@@ -486,7 +543,7 @@ export default function CouplesGame({ userId, userName }: CouplesGameProps) {
   if (gamePhase === 'playing') {
     console.log('Rendering game with data:', currentGameData)
     
-    if (!currentGameData || !currentGameData.question) {
+    if (!currentGameData || (!currentGameData.question && !currentGameData.currentChallenge)) {
       return (
         <div className="min-h-screen bg-gradient-to-br from-pink-100 to-purple-100 p-4 flex items-center justify-center">
           <div className="text-center">

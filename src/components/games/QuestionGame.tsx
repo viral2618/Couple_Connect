@@ -57,7 +57,7 @@ export default function QuestionGame({ gameRoom, gameData, socket, userId }: Que
                     <p className="font-semibold text-pink-800 mb-2">
                       {player?.name} {playerId === userId && '(You)'}
                     </p>
-                    <p className="text-gray-700">{answer}</p>
+                    <p className="text-gray-700">{String(answer)}</p>
                   </div>
                 )
               })}

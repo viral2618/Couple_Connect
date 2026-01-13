@@ -4,6 +4,7 @@ import QuestionGame from './QuestionGame'
 import DareGame from './DareGame'
 import TruthOrDareGame from './TruthOrDareGame'
 import DesireDecoderGame from './DesireDecoderGame'
+import LoveAddictionGame from '../../games/LoveAddiction/LoveAddictionGame'
 
 interface GameRendererProps {
   gameRoom: any
@@ -26,6 +27,20 @@ export default function GameRenderer({ gameRoom, currentGameData, socket, userId
           <p className="text-xs text-gray-500">Data: {currentGameData ? 'Yes' : 'No'}</p>
         </div>
       </div>
+    )
+  }
+
+  if (currentGameData.gameType === 'love-addiction') {
+    console.log('Rendering Love Addiction with roomId:', gameRoom.id, 'gameRoom:', gameRoom)
+    return (
+      <LoveAddictionGame 
+        socket={socket} 
+        roomId={gameRoom.id} 
+        players={gameRoom.players} 
+        onGameEnd={() => {}} 
+        initialGameData={currentGameData}
+        gameRoom={gameRoom}
+      />
     )
   }
 

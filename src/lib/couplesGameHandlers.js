@@ -1,4 +1,18 @@
 function setupCouplesGameHandlers(io, socket, rooms) {
+  // Import Love Addiction handlers
+  const { setupLoveAddictionHandlers } = require('../games/LoveAddiction/handlers.js')
+  
+  // Setup Love Addiction handlers
+  setupLoveAddictionHandlers(io, socket, rooms)
+  
+  // Helper function to clean up room data and prevent memory leaks
+  function cleanupRoomData(room) {
+    if (room && room.gameData && room.gameData.timer) {
+      clearTimeout(room.gameData.timer)
+      room.gameData.timer = null
+    }
+  }
+
   const gameQuestions = {
     'love-questions': [
       "Tell me about the moment you knew you loved me...",
@@ -42,18 +56,27 @@ function setupCouplesGameHandlers(io, socket, rooms) {
     const room = rooms.get(roomId)
     if (!room || !room.gameData) return
     
+    // Clear existing timer if any
+    if (room.gameData.timer) {
+      clearTimeout(room.gameData.timer)
+    }
+    
     room.gameData.timer = setTimeout(() => {
       const currentRoom = rooms.get(roomId)
       if (!currentRoom || !currentRoom.gameData) return
       
       console.log('Timer expired for room:', roomId)
-      io.to(roomId).emit('round-result', {
-        answers: currentRoom.gameData.answers,
-        scores: currentRoom.scores,
+      
+      // Create clean data object without circular references
+      const resultData = {
+        answers: { ...currentRoom.gameData.answers },
+        scores: { ...currentRoom.scores },
         round: currentRoom.gameData.currentRound,
         question: currentRoom.gameData.question,
         timedOut: true
-      })
+      }
+      
+      io.to(roomId).emit('round-result', resultData)
       
       setTimeout(() => {
         const room = rooms.get(roomId)
@@ -61,14 +84,23 @@ function setupCouplesGameHandlers(io, socket, rooms) {
         
         if (room.gameData.currentRound >= room.gameData.maxRounds) {
           room.gameState = 'finished'
-          io.to(roomId).emit('game-finished', room)
+          
+          // Create clean room data for emission
+          const finishedRoomData = {
+            id: room.id,
+            gameState: room.gameState,
+            scores: { ...room.scores },
+            players: room.players.map(p => ({ id: p.id, name: p.name }))
+          }
+          
+          io.to(roomId).emit('game-finished', finishedRoomData)
         } else {
           room.gameData.currentRound++
           const questions = gameQuestions[room.currentGame] || gameQuestions['love-questions']
           room.gameData.question = questions[Math.floor(Math.random() * questions.length)]
           room.gameData.answers = {}
           
-          io.to(roomId).emit('new-round', {
+          const newRoundData = {
             round: room.gameData.currentRound,
             question: room.gameData.question,
             maxRounds: room.gameData.maxRounds,
@@ -76,7 +108,9 @@ function setupCouplesGameHandlers(io, socket, rooms) {
             gameState: 'playing',
             answers: {},
             timedOut: true
-          })
+          }
+          
+          io.to(roomId).emit('new-round', newRoundData)
           startRoundTimer(roomId)
         }
       }, 3000)
@@ -119,20 +153,24 @@ function setupCouplesGameHandlers(io, socket, rooms) {
       roomId: roomId
     })
     
-    io.to(roomId).emit('game-started', {
+    // Create clean data objects for emission
+    const gameStartedData = {
       roomId: roomId,
       gameState: 'playing',
       currentRound: 1,
       question: randomQuestion
-    })
+    }
     
-    io.to(roomId).emit('game-data', {
+    const gameData = {
       question: randomQuestion,
       round: room.gameData.currentRound,
       maxRounds: room.gameData.maxRounds,
       answers: {},
       gameType: gameType
-    })
+    }
+    
+    io.to(roomId).emit('game-started', gameStartedData)
+    io.to(roomId).emit('game-data', gameData)
     
     startRoundTimer(roomId)
   })
@@ -156,13 +194,16 @@ function setupCouplesGameHandlers(io, socket, rooms) {
     room.gameData.answers[player.id] = answer
     console.log('Answer stored for player:', player.id, 'Answer:', answer)
     
-    io.to(roomId).emit('answer-submitted', {
+    // Create clean data object for emission
+    const answerSubmittedData = {
       playerId: player.id,
       playerName: player.name,
       totalAnswers: Object.keys(room.gameData.answers).length,
       requiredAnswers: room.players.length,
       message: `${player.name} has responded... 💕`
-    })
+    }
+    
+    io.to(roomId).emit('answer-submitted', answerSubmittedData)
     
     if (Object.keys(room.gameData.answers).length === room.players.length) {
       if (room.gameData.timer) {
@@ -172,14 +213,17 @@ function setupCouplesGameHandlers(io, socket, rooms) {
       
       console.log('All answers received, showing results with answers:', room.gameData.answers)
       
-      io.to(roomId).emit('round-result', {
-        answers: room.gameData.answers,
-        scores: room.scores,
+      // Create clean data object without circular references
+      const roundResultData = {
+        answers: { ...room.gameData.answers },
+        scores: { ...room.scores },
         round: room.gameData.currentRound,
         question: room.gameData.question,
         message: "Time to share your hearts... 💖",
-        players: room.players
-      })
+        players: room.players.map(p => ({ id: p.id, name: p.name }))
+      }
+      
+      io.to(roomId).emit('round-result', roundResultData)
       
       setTimeout(() => {
         const currentRoom = rooms.get(roomId)
@@ -188,7 +232,16 @@ function setupCouplesGameHandlers(io, socket, rooms) {
         if (currentRoom.gameData.currentRound >= currentRoom.gameData.maxRounds) {
           console.log('Game finished')
           currentRoom.gameState = 'finished'
-          io.to(roomId).emit('game-finished', currentRoom)
+          
+          // Create clean room data for emission
+          const finishedRoomData = {
+            id: currentRoom.id,
+            gameState: currentRoom.gameState,
+            scores: { ...currentRoom.scores },
+            players: currentRoom.players.map(p => ({ id: p.id, name: p.name }))
+          }
+          
+          io.to(roomId).emit('game-finished', finishedRoomData)
         } else {
           console.log('Starting next round')
           currentRoom.gameData.currentRound++
@@ -201,7 +254,7 @@ function setupCouplesGameHandlers(io, socket, rooms) {
             question: currentRoom.gameData.question
           })
           
-          io.to(roomId).emit('new-round', {
+          const newRoundData = {
             round: currentRoom.gameData.currentRound,
             question: currentRoom.gameData.question,
             maxRounds: currentRoom.gameData.maxRounds,
@@ -209,11 +262,42 @@ function setupCouplesGameHandlers(io, socket, rooms) {
             gameState: 'playing',
             answers: {},
             message: `Round ${currentRoom.gameData.currentRound} - Get ready for the next question! 💕`
-          })
+          }
+          
+          io.to(roomId).emit('new-round', newRoundData)
           
           startRoundTimer(roomId)
         }
       }, 3000)
+    }
+  })
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id)
+    // Clean up rooms and timers when players disconnect
+    for (const [roomCode, room] of rooms.entries()) {
+      if (room.host && room.host.socketId === socket.id) {
+        cleanupRoomData(room)
+        rooms.delete(roomCode)
+        io.to(roomCode).emit('room_closed', { reason: 'Host disconnected' })
+      } else if (room.guest && room.guest.socketId === socket.id) {
+        room.guest = null
+        room.players = room.players.filter(p => p.socketId !== socket.id)
+        
+        // Create clean room update data
+        const roomUpdateData = {
+          id: room.id,
+          code: room.code,
+          host: { id: room.host.id },
+          guest: null,
+          players: room.players.map(p => ({ id: p.id, name: p.name })),
+          gameState: room.gameState,
+          currentGame: room.currentGame,
+          scores: { ...room.scores }
+        }
+        
+        io.to(roomCode).emit('room-update', roomUpdateData)
+      }
     }
   })
 }

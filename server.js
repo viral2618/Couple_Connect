@@ -34,6 +34,31 @@ function generateRoomCode() {
   return code
 }
 
+// Add process handlers for graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, cleaning up...')
+  // Clean up all room timers
+  for (const [roomCode, room] of rooms.entries()) {
+    if (room.gameData && room.gameData.timer) {
+      clearTimeout(room.gameData.timer)
+    }
+  }
+  prisma.$disconnect()
+  process.exit(0)
+})
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, cleaning up...')
+  // Clean up all room timers
+  for (const [roomCode, room] of rooms.entries()) {
+    if (room.gameData && room.gameData.timer) {
+      clearTimeout(room.gameData.timer)
+    }
+  }
+  prisma.$disconnect()
+  process.exit(0)
+})
+
 app.prepare().then(() => {
   const server = createServer(async (req, res) => {
     try {
@@ -123,11 +148,22 @@ app.prepare().then(() => {
         rooms.set(roomCode, room)
         socket.join(roomCode)
         
-        socket.emit('room_created', {
+        // Create clean room data for emission
+        const roomCreatedData = {
           roomId: roomCode,
           roomCode: roomCode,
-          room: room
-        })
+          room: {
+            id: room.id,
+            code: room.code,
+            host: { id: room.host.id },
+            players: room.players.map(p => ({ id: p.id, name: p.name })),
+            gameState: room.gameState,
+            currentGame: room.currentGame,
+            scores: { ...room.scores }
+          }
+        }
+        
+        socket.emit('room_created', roomCreatedData)
         
         console.log('Room created:', roomCode, 'by', playerName)
       } catch (error) {
@@ -169,13 +205,37 @@ app.prepare().then(() => {
         
         socket.join(data.roomCode)
         
-        socket.emit('room_joined', {
+        // Create clean room data for emission
+        const roomJoinedData = {
           roomId: data.roomCode,
           roomCode: data.roomCode,
-          room: room
-        })
+          room: {
+            id: room.id,
+            code: room.code,
+            host: { id: room.host.id },
+            guest: room.guest ? { id: room.guest.id } : null,
+            players: room.players.map(p => ({ id: p.id, name: p.name })),
+            gameState: room.gameState,
+            currentGame: room.currentGame,
+            scores: { ...room.scores }
+          }
+        }
         
-        io.to(data.roomCode).emit('room-update', room)
+        socket.emit('room_joined', roomJoinedData)
+        
+        // Create clean room update data
+        const roomUpdateData = {
+          id: room.id,
+          code: room.code,
+          host: { id: room.host.id },
+          guest: room.guest ? { id: room.guest.id } : null,
+          players: room.players.map(p => ({ id: p.id, name: p.name })),
+          gameState: room.gameState,
+          currentGame: room.currentGame,
+          scores: { ...room.scores }
+        }
+        
+        io.to(data.roomCode).emit('room-update', roomUpdateData)
         
         console.log('Player', playerName, 'joined room:', data.roomCode)
       } catch (error) {
@@ -188,13 +248,30 @@ app.prepare().then(() => {
       console.log('User disconnected:', socket.id)
       // Clean up rooms when players disconnect
       for (const [roomCode, room] of rooms.entries()) {
-        if (room.host.socketId === socket.id) {
+        if (room.host && room.host.socketId === socket.id) {
+          // Clean up any timers if they exist
+          if (room.gameData && room.gameData.timer) {
+            clearTimeout(room.gameData.timer)
+          }
           rooms.delete(roomCode)
           io.to(roomCode).emit('room_closed', { reason: 'Host disconnected' })
         } else if (room.guest && room.guest.socketId === socket.id) {
           room.guest = null
           room.players = room.players.filter(p => p.socketId !== socket.id)
-          io.to(roomCode).emit('room-update', room)
+          
+          // Create clean room update data
+          const roomUpdateData = {
+            id: room.id,
+            code: room.code,
+            host: { id: room.host.id },
+            guest: null,
+            players: room.players.map(p => ({ id: p.id, name: p.name })),
+            gameState: room.gameState,
+            currentGame: room.currentGame,
+            scores: { ...room.scores }
+          }
+          
+          io.to(roomCode).emit('room-update', roomUpdateData)
         }
       }
     })
