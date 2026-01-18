@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
       attributesToHighlight: ['name', 'email']
     })
 
-    if (searchResult.success) {
+    if (searchResult.success && searchResult.data) {
       return NextResponse.json(searchResult.data.hits)
     }
 
