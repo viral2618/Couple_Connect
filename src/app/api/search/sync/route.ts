@@ -1,43 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { MeiliSearch } from 'meilisearch'
-import { prisma } from '@/lib/prisma'
+import { searchService } from '@/lib/search-service'
 
-const meiliClient = new MeiliSearch({
-  host: process.env.MEILISEARCH_HOST || 'http://localhost:7700',
-  apiKey: process.env.MEILISEARCH_MASTER_KEY
-})
-
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    // Get all users from database
-    const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        avatar: true
-      }
-    })
-
-    // Get or create users index
-    const index = meiliClient.index('users')
+    console.log('🔄 Starting search sync...')
     
-    // Configure searchable attributes
-    await index.updateSearchableAttributes(['name', 'email'])
-    await index.updateFilterableAttributes(['id'])
+    const result = await searchService.syncUsers()
+    
+    if (result.success) {
+      console.log(`✅ Search sync completed: ${result.count} users indexed`)
+      return NextResponse.json({
+        success: true,
+        message: `Successfully synced ${result.count} users`,
+        count: result.count
+      })
+    } else {
+      console.error('❌ Search sync failed:', result.error)
+      return NextResponse.json({
+        success: false,
+        error: result.error
+      }, { status: 500 })
+    }
+  } catch (error) {
+    console.error('❌ Search sync error:', error)
+    return NextResponse.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
+  }
+}
 
-    // Add documents to MeiliSearch
-    await index.addDocuments(users)
-
-    return NextResponse.json({ 
-      message: 'Users synced successfully', 
-      count: users.length 
+export async function GET(request: NextRequest) {
+  try {
+    const stats = searchService.getIndexStats()
+    return NextResponse.json({
+      success: true,
+      stats
     })
   } catch (error) {
-    console.error('Sync error:', error)
-    return NextResponse.json(
-      { error: 'Failed to sync users' }, 
-      { status: 500 }
-    )
+    console.error('❌ Failed to get search stats:', error)
+    return NextResponse.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
   }
 }

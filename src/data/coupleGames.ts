@@ -82,6 +82,40 @@ export const coupleGames: CoupleGame[] = [
       'Adds excitement'
     ],
     icon: '🎯'
+  },
+  {
+    id: 'seductive-secrets',
+    name: 'Seductive Secrets',
+    category: 'Intimate Questions',
+    intimacyLevel: 'High',
+    objective: 'Unlock deepest desires and fantasies through progressive intimacy levels',
+    description: 'Progressive intimacy system with 8 levels - from flirty to forbidden. Share confessions, fantasies, and desires',
+    tags: ['seductive', 'secrets', 'progressive', 'intimate', 'fantasies'],
+    duration: '30-60 minutes',
+    players: 2,
+    difficulty: 'Medium',
+    materials: ['Phone/Device', 'Private space'],
+    instructions: [
+      'Choose your mood (playful, romantic, passionate, wild)',
+      'Progress through 8 intimacy levels',
+      'Share confessions, fantasies, and desires',
+      'Be honest and seductive in your responses',
+      'Unlock new content as you advance'
+    ],
+    variations: [
+      'Playful Mode',
+      'Romantic Mode', 
+      'Passionate Mode',
+      'Wild Mode'
+    ],
+    benefits: [
+      'Deepens intimate connection',
+      'Explores fantasies safely',
+      'Progressive intimacy building',
+      'Unlocks hidden desires',
+      'Creates seductive atmosphere'
+    ],
+    icon: '💋'
   }
 ];
 

@@ -5,6 +5,7 @@ import DareGame from './DareGame'
 import TruthOrDareGame from './TruthOrDareGame'
 import DesireDecoderGame from './DesireDecoderGame'
 import LoveAddictionGame from '../../games/LoveAddiction/LoveAddictionGame'
+import SeductiveSecretsGame from '../../games/SeductiveSecrets/SeductiveSecretsGame'
 
 interface GameRendererProps {
   gameRoom: any
@@ -34,6 +35,20 @@ export default function GameRenderer({ gameRoom, currentGameData, socket, userId
     console.log('Rendering Love Addiction with roomId:', gameRoom.id, 'gameRoom:', gameRoom)
     return (
       <LoveAddictionGame 
+        socket={socket} 
+        roomId={gameRoom.id} 
+        players={gameRoom.players} 
+        onGameEnd={() => {}} 
+        initialGameData={currentGameData}
+        gameRoom={gameRoom}
+      />
+    )
+  }
+
+  if (currentGameData.gameType === 'seductive-secrets') {
+    console.log('Rendering Seductive Secrets with roomId:', gameRoom.id, 'gameRoom:', gameRoom)
+    return (
+      <SeductiveSecretsGame 
         socket={socket} 
         roomId={gameRoom.id} 
         players={gameRoom.players} 

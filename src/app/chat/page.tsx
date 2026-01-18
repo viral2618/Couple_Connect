@@ -8,7 +8,7 @@ import { useTrialTimer } from '@/hooks/useTrialTimer'
 import { TrialBanner } from '@/components/TrialBanner'
 import { TrialModal } from '@/components/TrialModal'
 import FullPageChat from '@/components/FullPageChat'
-import { MeiliSearch } from 'meilisearch'
+
 import { AuthDebug } from '@/components/AuthDebug'
 import { generateFingerprint } from '@/lib/fingerprint'
 
@@ -27,7 +27,7 @@ export default function ChatPage() {
   const [searchResults, setSearchResults] = useState<Partner[]>([])
   const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [client, setClient] = useState<MeiliSearch | null>(null)
+
   const [isVerifying, setIsVerifying] = useState(false)
   const [verificationCode, setVerificationCode] = useState('')
   const [enteredCode, setEnteredCode] = useState('')
@@ -183,15 +183,7 @@ export default function ChatPage() {
     }
   }, [user])
 
-  useEffect(() => {
-    if (user) {
-      const meiliClient = new MeiliSearch({
-        host: process.env.NEXT_PUBLIC_MEILISEARCH_HOST || 'http://localhost:7700',
-        apiKey: process.env.NEXT_PUBLIC_MEILISEARCH_API_KEY
-      })
-      setClient(meiliClient)
-    }
-  }, [user])
+
 
   const searchPartners = async (query: string) => {
     if (!query.trim()) {
@@ -255,9 +247,9 @@ export default function ChatPage() {
         
         {/* Minimal Header for Chat */}
         <header className="bg-white/90 backdrop-blur-md border-b border-rose-200/50 z-40 flex-shrink-0">
-          <div className="px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center py-3">
-              <div className="flex items-center space-x-4">
+          <div className="px-3 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center py-2 sm:py-3">
+              <div className="flex items-center space-x-2 sm:space-x-4 min-w-0 flex-1">
                 <button
                   onClick={() => {
                     setVerifiedPartner(null)
@@ -265,20 +257,23 @@ export default function ChatPage() {
                       localStorage.removeItem(`verifiedPartner_${user.id}`)
                     }
                   }}
-                  className="text-rose-600 hover:text-rose-700 font-medium"
+                  className="text-rose-600 hover:text-rose-700 font-medium p-1 sm:p-2 hover:bg-rose-50 rounded-lg transition-colors"
+                  title="Back to partner selection"
                 >
-                  ← Back
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
                 </button>
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-gradient-to-r from-rose-400 to-pink-400 rounded-full flex items-center justify-center">
-                    <span className="text-white text-sm font-semibold">
+                <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
+                  <div className="w-6 h-6 sm:w-8 sm:h-8 bg-gradient-to-r from-rose-400 to-pink-400 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-white text-xs sm:text-sm font-semibold">
                       {verifiedPartner.name.charAt(0).toUpperCase()}
                     </span>
                   </div>
-                  <span className="text-gray-800 font-semibold">{verifiedPartner.name}</span>
+                  <span className="text-gray-800 font-semibold text-sm sm:text-base truncate">{verifiedPartner.name}</span>
                 </div>
               </div>
-              <span className="text-gray-600 text-sm">💕 Couple Connect</span>
+              <span className="text-gray-600 text-xs sm:text-sm font-medium hidden sm:block">💕 Couple Connect</span>
             </div>
           </div>
         </header>
@@ -318,22 +313,25 @@ export default function ChatPage() {
       
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-md border-b border-rose-200/50 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div className="flex items-center space-x-4">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center py-3 sm:py-4">
+            <div className="flex items-center space-x-2 sm:space-x-4 min-w-0 flex-1">
               <button
                 onClick={() => router.push('/home')}
-                className="text-rose-600 hover:text-rose-700 font-medium"
+                className="text-rose-600 hover:text-rose-700 font-medium p-1 sm:p-2 hover:bg-rose-50 rounded-lg transition-colors"
+                title="Back to Home"
               >
-                ← Back to Home
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
               </button>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-rose-600 to-pink-600 bg-clip-text text-transparent">
+              <h1 className="text-lg sm:text-2xl font-bold bg-gradient-to-r from-rose-600 to-pink-600 bg-clip-text text-transparent">
                 💕 Chat
               </h1>
             </div>
             
-            {/* Search in Navbar */}
-            <div className="flex items-center space-x-4">
+            {/* Search and User Info */}
+            <div className="flex items-center space-x-2 sm:space-x-4">
               <div className="relative">
                 <input
                   type="text"
@@ -342,8 +340,8 @@ export default function ChatPage() {
                     setSearchQuery(e.target.value)
                     searchPartners(e.target.value)
                   }}
-                  placeholder="Search for a partner..."
-                  className="w-64 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-transparent"
+                  placeholder="Search partner..."
+                  className="w-32 sm:w-64 px-3 sm:px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
                 />
                 
                 {/* Search Results Dropdown */}
@@ -360,14 +358,14 @@ export default function ChatPage() {
                         className="p-3 hover:bg-rose-50 cursor-pointer transition-colors border-b border-gray-100 last:border-b-0"
                       >
                         <div className="flex items-center space-x-3">
-                          <div className="w-8 h-8 bg-gradient-to-r from-rose-400 to-pink-400 rounded-full flex items-center justify-center">
-                            <span className="text-white text-sm font-semibold">
+                          <div className="w-6 h-6 sm:w-8 sm:h-8 bg-gradient-to-r from-rose-400 to-pink-400 rounded-full flex items-center justify-center flex-shrink-0">
+                            <span className="text-white text-xs sm:text-sm font-semibold">
                               {partner.name.charAt(0).toUpperCase()}
                             </span>
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-900 truncate">{partner.name}</p>
-                            <p className="text-sm text-gray-500 truncate">{partner.email}</p>
+                            <p className="font-medium text-gray-900 truncate text-sm">{partner.name}</p>
+                            <p className="text-xs text-gray-500 truncate">{partner.email}</p>
                           </div>
                         </div>
                       </div>
@@ -375,14 +373,14 @@ export default function ChatPage() {
                     {searchQuery && !isLoading && searchResults.length === 0 && (
                       <div className="text-center py-4 text-gray-500">
                         <span className="text-2xl mb-2 block">🔍</span>
-                        <p>No partners found</p>
+                        <p className="text-sm">No partners found</p>
                       </div>
                     )}
                   </div>
                 )}
               </div>
               
-              <span className="text-gray-600">Welcome, {user.name}</span>
+              <span className="text-gray-600 text-xs sm:text-sm hidden sm:block">Welcome, {user.name}</span>
             </div>
           </div>
         </div>

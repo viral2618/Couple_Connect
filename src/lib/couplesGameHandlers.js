@@ -5,6 +5,9 @@ function setupCouplesGameHandlers(io, socket, rooms) {
   // Setup Love Addiction handlers
   setupLoveAddictionHandlers(io, socket, rooms)
   
+  // Import Seductive Secrets content
+  const { seductiveSecretsContent } = require('../games/SeductiveSecrets/seductiveSecretsContent.js')
+  
   // Helper function to clean up room data and prevent memory leaks
   function cleanupRoomData(room) {
     if (room && room.gameData && room.gameData.timer) {
@@ -134,6 +137,13 @@ function setupCouplesGameHandlers(io, socket, rooms) {
       return
     }
     
+    // Check if player is host
+    const player = room.players.find(p => p.socketId === socket.id)
+    if (!player || player.id !== room.hostId) {
+      socket.emit('error', 'Only the host can start the game')
+      return
+    }
+    
     const questions = gameQuestions[gameType] || gameQuestions['love-questions']
     const randomQuestion = questions[Math.floor(Math.random() * questions.length)]
     
@@ -158,7 +168,8 @@ function setupCouplesGameHandlers(io, socket, rooms) {
       roomId: roomId,
       gameState: 'playing',
       currentRound: 1,
-      question: randomQuestion
+      question: randomQuestion,
+      gameType: gameType
     }
     
     const gameData = {
@@ -166,7 +177,8 @@ function setupCouplesGameHandlers(io, socket, rooms) {
       round: room.gameData.currentRound,
       maxRounds: room.gameData.maxRounds,
       answers: {},
-      gameType: gameType
+      gameType: gameType,
+      showResults: false
     }
     
     io.to(roomId).emit('game-started', gameStartedData)
@@ -175,13 +187,96 @@ function setupCouplesGameHandlers(io, socket, rooms) {
     startRoundTimer(roomId)
   })
 
-  socket.on('submit-answer', (data) => {
-    console.log('Answer submitted:', data)
-    const { roomId, answer } = data
+  // Seductive Secrets game handlers
+  socket.on('start-seductive-secrets', (data) => {
+    console.log('Seductive Secrets start request:', data)
+    const { roomId, gameMode, mood } = data
     const room = rooms.get(roomId)
     
-    if (!room || !room.gameData) {
-      console.log('Room or gameData not found:', roomId)
+    if (!room) {
+      console.log('Room not found:', roomId)
+      socket.emit('error', 'Room not found')
+      return
+    }
+    
+    if (room.players.length < 2) {
+      console.log('Not enough players:', room.players.length)
+      socket.emit('error', 'Need 2 players to start')
+      return
+    }
+    
+    // Get random secret from level 1
+    const level1Content = seductiveSecretsContent.level1
+    const categories = Object.keys(level1Content)
+    const randomCategory = categories[Math.floor(Math.random() * categories.length)]
+    const secrets = level1Content[randomCategory]
+    const randomSecret = secrets[Math.floor(Math.random() * secrets.length)]
+    
+    room.currentGame = 'seductive-secrets'
+    room.gameState = 'playing'
+    room.gameData = {
+      currentSecret: randomSecret,
+      secretType: randomCategory,
+      intimacyLevel: 1,
+      round: 1,
+      maxRounds: 8,
+      mood: mood || 'playful',
+      responses: {},
+      players: room.players.map(p => ({
+        id: p.id,
+        name: p.name,
+        totalPoints: 0,
+        currentStreak: 0,
+        level: 1,
+        intimacyRating: 0,
+        unlockedContent: 0
+      })),
+      timer: null
+    }
+    
+    const gameStartData = {
+      roomId: roomId,
+      gameType: 'seductive-secrets',
+      currentSecret: randomSecret,
+      secretType: randomCategory,
+      intimacyLevel: 1,
+      round: 1,
+      maxRounds: 8,
+      mood: mood || 'playful',
+      players: room.gameData.players
+    }
+    
+    io.to(roomId).emit('seductive-secrets-started', gameStartData)
+    io.to(roomId).emit('game-started', { ...gameStartData, gameState: 'playing' })
+    io.to(roomId).emit('game-data', gameStartData)
+    
+    console.log('Seductive Secrets game started for room:', roomId)
+  })
+
+  socket.on('submit-seductive-secrets-response', (data) => {
+    console.log('Seductive Secrets response submitted:', data)
+    const { roomId, response, timeSpent, intimacyLevel, secretType } = data
+    
+    // Find room by roomId or socket ID
+    let room = null
+    let actualRoomId = roomId
+    
+    if (roomId) {
+      room = rooms.get(roomId)
+    } else {
+      for (const [code, roomData] of rooms.entries()) {
+        if (roomData.players && roomData.players.some(p => p.socketId === socket.id)) {
+          room = roomData
+          actualRoomId = code
+          console.log('Found room by socket ID:', code)
+          break
+        }
+      }
+    }
+    
+    if (!room || !room.gameData || !room.players) {
+      console.log('Room or gameData not found. RoomId:', roomId, 'ActualRoomId:', actualRoomId)
+      socket.emit('error', 'Room not found or game not active')
       return
     }
     
@@ -191,10 +286,177 @@ function setupCouplesGameHandlers(io, socket, rooms) {
       return
     }
     
+    // Initialize game data objects if they don't exist
+    if (!room.gameData.responses) room.gameData.responses = {}
+    if (!room.gameData.players) room.gameData.players = []
+    
+    room.gameData.responses[player.id] = {
+      response,
+      timeSpent,
+      intimacyLevel,
+      secretType,
+      timestamp: Date.now()
+    }
+    
+    // Update player stats safely
+    const playerData = room.gameData.players.find(p => p.id === player.id)
+    if (playerData) {
+      playerData.totalPoints = (playerData.totalPoints || 0) + Math.max(10, 50 - Math.floor(timeSpent / 1000))
+      playerData.intimacyRating = Math.min(100, (playerData.intimacyRating || 0) + 5)
+    }
+    
+    io.to(actualRoomId).emit('answer-submitted', {
+      playerId: player.id,
+      playerName: player.name,
+      totalResponses: Object.keys(room.gameData.responses).length,
+      requiredResponses: room.players.length
+    })
+    
+    // Check if all players have responded
+    if (Object.keys(room.gameData.responses).length === room.players.length) {
+      // Show round results
+      io.to(actualRoomId).emit('seductive-secrets-round-result', {
+        responses: room.gameData.responses,
+        players: room.gameData.players,
+        updates: room.gameData.players.map(p => ({
+          playerId: p.id,
+          newAchievements: [],
+          levelUp: { leveledUp: false },
+          streakBonus: false,
+          currentStreak: p.currentStreak || 0
+        }))
+      })
+      
+      // Start next round after delay
+      setTimeout(() => {
+        const currentRoom = rooms.get(actualRoomId)
+        if (!currentRoom || !currentRoom.gameData) return
+        
+        if (currentRoom.gameData.round >= currentRoom.gameData.maxRounds) {
+          // Game finished
+          io.to(actualRoomId).emit('seductive-secrets-ended', {
+            players: currentRoom.gameData.players,
+            seductionScore: 85,
+            finalStats: {
+              totalSecrets: currentRoom.gameData.round,
+              maxIntimacy: currentRoom.gameData.intimacyLevel
+            }
+          })
+        } else {
+          // Next round
+          currentRoom.gameData.round++
+          const newLevel = Math.min(8, Math.floor(currentRoom.gameData.round / 2) + 1)
+          currentRoom.gameData.intimacyLevel = newLevel
+          
+          const levelContent = seductiveSecretsContent[`level${newLevel}`]
+          if (levelContent) {
+            const categories = Object.keys(levelContent)
+            const randomCategory = categories[Math.floor(Math.random() * categories.length)]
+            const secrets = levelContent[randomCategory]
+            const randomSecret = secrets[Math.floor(Math.random() * secrets.length)]
+            
+            currentRoom.gameData.currentSecret = randomSecret
+            currentRoom.gameData.secretType = randomCategory
+            currentRoom.gameData.responses = {}
+            
+            io.to(actualRoomId).emit('seductive-secrets-next-round', {
+              currentSecret: randomSecret,
+              secretType: randomCategory,
+              intimacyLevel: newLevel,
+              round: currentRoom.gameData.round,
+              players: currentRoom.gameData.players,
+              mood: currentRoom.gameData.mood
+            })
+          }
+        }
+      }, 3000)
+    }
+  })
+
+  socket.on('skip-seductive-secrets-challenge', (data) => {
+    const { roomId } = data
+    
+    // Find room by roomId or socket ID
+    let room = null
+    let actualRoomId = roomId
+    
+    if (roomId) {
+      room = rooms.get(roomId)
+    } else {
+      for (const [code, roomData] of rooms.entries()) {
+        if (roomData.players && roomData.players.some(p => p.socketId === socket.id)) {
+          room = roomData
+          actualRoomId = code
+          break
+        }
+      }
+    }
+    
+    if (!room || !room.gameData || !room.players) return
+    
+    const player = room.players.find(p => p.socketId === socket.id)
+    if (!player) return
+    
+    // Initialize responses object if it doesn't exist
+    if (!room.gameData.responses) room.gameData.responses = {}
+    
+    // Mark as skipped
+    room.gameData.responses[player.id] = {
+      response: '[SKIPPED]',
+      skipped: true,
+      timestamp: Date.now()
+    }
+    
+    io.to(actualRoomId).emit('answer-submitted', {
+      playerId: player.id,
+      playerName: player.name,
+      skipped: true,
+      totalResponses: Object.keys(room.gameData.responses).length,
+      requiredResponses: room.players.length
+    })
+  })
+
+  socket.on('submit-answer', (data) => {
+    console.log('Answer submitted:', data)
+    const { roomId, answer } = data
+    const room = rooms.get(roomId)
+    
+    if (!room || !room.gameData) {
+      console.log('Room or gameData not found:', roomId)
+      socket.emit('error', 'Room not found or game not active')
+      return
+    }
+    
+    const player = room.players.find(p => p.socketId === socket.id)
+    if (!player) {
+      console.log('Player not found in room')
+      socket.emit('error', 'Player not found in room')
+      return
+    }
+    
+    // Check if player already submitted
+    if (room.gameData.answers && room.gameData.answers[player.id]) {
+      console.log('Player already submitted answer:', player.id)
+      socket.emit('error', 'You have already submitted your answer')
+      return
+    }
+    
+    // Initialize answers object if it doesn't exist
+    if (!room.gameData.answers) {
+      room.gameData.answers = {}
+    }
+    
+    // Store the answer
     room.gameData.answers[player.id] = answer
     console.log('Answer stored for player:', player.id, 'Answer:', answer)
     
-    // Create clean data object for emission
+    // Confirm submission to the submitting player
+    socket.emit('answer-confirmed', {
+      playerId: player.id,
+      message: 'Your response has been submitted successfully! 💕'
+    })
+    
+    // Notify all players about the submission
     const answerSubmittedData = {
       playerId: player.id,
       playerName: player.name,
@@ -205,7 +467,14 @@ function setupCouplesGameHandlers(io, socket, rooms) {
     
     io.to(roomId).emit('answer-submitted', answerSubmittedData)
     
-    if (Object.keys(room.gameData.answers).length === room.players.length) {
+    // Check if all players have submitted
+    const totalAnswers = Object.keys(room.gameData.answers).length
+    const requiredAnswers = room.players.length
+    
+    console.log(`Answers received: ${totalAnswers}/${requiredAnswers}`)
+    
+    if (totalAnswers === requiredAnswers) {
+      // Clear timer if exists
       if (room.gameData.timer) {
         clearTimeout(room.gameData.timer)
         room.gameData.timer = null
@@ -220,11 +489,13 @@ function setupCouplesGameHandlers(io, socket, rooms) {
         round: room.gameData.currentRound,
         question: room.gameData.question,
         message: "Time to share your hearts... 💖",
-        players: room.players.map(p => ({ id: p.id, name: p.name }))
+        players: room.players.map(p => ({ id: p.id, name: p.name })),
+        showResults: true
       }
       
       io.to(roomId).emit('round-result', roundResultData)
       
+      // Start next round or end game after delay
       setTimeout(() => {
         const currentRoom = rooms.get(roomId)
         if (!currentRoom || !currentRoom.gameData) return
@@ -247,7 +518,7 @@ function setupCouplesGameHandlers(io, socket, rooms) {
           currentRoom.gameData.currentRound++
           const questions = gameQuestions[currentRoom.currentGame] || gameQuestions['love-questions']
           currentRoom.gameData.question = questions[Math.floor(Math.random() * questions.length)]
-          currentRoom.gameData.answers = {}
+          currentRoom.gameData.answers = {} // Reset answers for new round
           
           console.log('Sending new round data:', {
             round: currentRoom.gameData.currentRound,
@@ -261,6 +532,7 @@ function setupCouplesGameHandlers(io, socket, rooms) {
             gameType: currentRoom.currentGame,
             gameState: 'playing',
             answers: {},
+            showResults: false,
             message: `Round ${currentRoom.gameData.currentRound} - Get ready for the next question! 💕`
           }
           
@@ -268,7 +540,7 @@ function setupCouplesGameHandlers(io, socket, rooms) {
           
           startRoundTimer(roomId)
         }
-      }, 3000)
+      }, 5000) // Increased delay to 5 seconds to give players time to read answers
     }
   })
 

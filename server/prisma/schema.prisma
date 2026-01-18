@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  name              String
+  email             String   @unique
+  password          String
+  avatar            String?
+  partnerId         String?  @db.ObjectId
+  partner           User?    @relation("UserPartner", fields: [partnerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  partners          User[]   @relation("UserPartner")
+  sentMessages      Message[]
+  receivedMessages  Message[] @relation("ReceivedMessages")
+  isVerified        Boolean  @default(false)
+  verificationOtp   String?
+  otpExpiry         DateTime?
+  verificationAttempts Int   @default(0)
+  resetToken        String?
+  resetTokenExpiry  DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model TrialSession {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  fingerprint   String   @unique
+  usedSeconds   Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Message {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  content   String
+  senderId  String   @db.ObjectId
+  sender    User     @relation(fields: [senderId], references: [id])
+  receiverId String  @db.ObjectId
+  receiver  User     @relation("ReceivedMessages", fields: [receiverId], references: [id])
+  reactions Json[]   @default([])
+  createdAt DateTime @default(now())
+}
+
+model VerificationCode {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  partnerId String   @db.ObjectId
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Partnership {
+  id      String @id @default(auto()) @map("_id") @db.ObjectId
+  user1Id String @db.ObjectId
+  user2Id String @db.ObjectId
+  status  String @default("VERIFIED")
+  createdAt DateTime @default(now())
+}
+
+model GameRoom {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  roomId       String   @unique
+  gameType     String   @default("confession")
+  hostId       String   @db.ObjectId
+  players      Json[]   @default([])
+  gameState    String   @default("waiting")
+  currentRound Int      @default(1)
+  statements   Json     @default("{}")
+  confessions  Json     @default("{}")
+  scores       Json     @default("{}")
+  guesses      Json     @default("{}")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

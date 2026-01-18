@@ -37,7 +37,13 @@ export default function CouplesGame({ userId, userName }: CouplesGameProps) {
   const [currentGameData, setCurrentGameData] = useState<any>(null)
 
   useEffect(() => {
-    const newSocket = io()
+    const newSocket = io(process.env.NODE_ENV === 'production' 
+      ? process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin
+      : 'http://localhost:3000', {
+      transports: ['websocket', 'polling'],
+      timeout: 20000,
+      forceNew: true
+    })
     setSocket(newSocket)
 
     newSocket.on('connect', () => {
@@ -449,21 +455,21 @@ export default function CouplesGame({ userId, userName }: CouplesGameProps) {
                   </motion.button>
 
                   <motion.button
-                    onClick={() => startGame('love-questions')}
+                    onClick={() => startGame('seductive-secrets')}
                     className="group relative bg-white rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border border-gray-100"
                     whileHover={{ scale: 1.02, y: -2 }}
                     whileTap={{ scale: 0.98 }}
                   >
                     <div className="text-center space-y-4">
-                      <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-xl flex items-center justify-center text-xl mx-auto shadow-md">
-                        😈
+                      <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center text-xl mx-auto shadow-md">
+                        💋
                       </div>
                       <div>
-                        <h4 className="text-lg font-bold text-gray-800 mb-2">Seduction Challenge</h4>
-                        <p className="text-gray-600 text-sm leading-relaxed">Playful and sensual dares to ignite spark</p>
+                        <h4 className="text-lg font-bold text-gray-800 mb-2">Seductive Secrets</h4>
+                        <p className="text-gray-600 text-sm leading-relaxed">Progressive intimacy with 8 levels of seduction</p>
                       </div>
-                      <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center group-hover:bg-indigo-100 transition-colors mx-auto">
-                        <svg className="w-3 h-3 text-gray-400 group-hover:text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center group-hover:bg-purple-100 transition-colors mx-auto">
+                        <svg className="w-3 h-3 text-gray-400 group-hover:text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
                       </div>

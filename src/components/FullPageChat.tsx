@@ -5,7 +5,7 @@ import { io, Socket } from 'socket.io-client'
 import ChatHeader from './chat/ChatHeader'
 import MessageList from './chat/MessageList'
 import ChatInput from './chat/ChatInput'
-import VideoCall from './VideoCall'
+import VideoCallManager from './VideoCallManager'
 import { useVideoCall } from '@/hooks/useVideoCall'
 
 interface Message {
@@ -53,14 +53,17 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
   useEffect(() => {
     if (!canChat) return
 
-    const socketInstance = io({
-      transports: ['websocket', 'polling']
+    const socketInstance = io(process.env.NODE_ENV === 'production' 
+      ? process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin
+      : 'http://localhost:3000', {
+      transports: ['websocket', 'polling'],
+      timeout: 20000,
+      forceNew: true
     })
 
     socketInstance.on('connect', () => {
       console.log('Socket connected:', socketInstance.id)
       setIsOnline(true)
-      // Use the same room ID for both chat and video calls
       const roomId = [currentUser.id, partner.id].sort().join('-')
       socketInstance.emit('join-room', roomId)
       console.log('Joined room:', roomId)
@@ -80,8 +83,6 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
       console.log('Received message:', message)
       setMessages(prev => [...prev, message])
     })
-
-
 
     setSocket(socketInstance)
     fetchMessages()
@@ -131,8 +132,6 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
     }
   }
 
-
-
   const sendMessage = async () => {
     console.log('Send button clicked!')
     console.log('newMessage:', newMessage)
@@ -157,7 +156,6 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
         const savedMessage = await response.json()
         console.log('Saved message:', savedMessage)
         
-        // Don't add to UI immediately - let socket handle it
         if (socket) {
           const roomId = [currentUser.id, partner.id].sort().join('-')
           socket.emit('send-message', {
@@ -187,22 +185,22 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
 
   if (!canChat) {
     return (
-      <div className="h-full flex items-center justify-center bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50">
-        <div className="text-center p-8 bg-white/80 backdrop-blur-md rounded-3xl shadow-xl border border-rose-200/50">
-          <span className="text-6xl mb-4 block">🚫</span>
-          <h3 className="text-2xl font-bold text-gray-800 mb-3">Cannot Chat</h3>
-          <p className="text-rose-600 mb-4 font-medium">{partnershipError}</p>
-          <p className="text-sm text-gray-600">Make sure both users are verified and have completed the partner verification process.</p>
+      <div className="h-full flex items-center justify-center bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 p-4">
+        <div className="text-center p-6 sm:p-8 bg-white/90 backdrop-blur-md rounded-3xl shadow-xl border border-rose-200/50 max-w-md mx-auto">
+          <span className="text-4xl sm:text-6xl mb-4 block">🚫</span>
+          <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-3">Cannot Chat</h3>
+          <p className="text-rose-600 mb-4 font-medium text-sm sm:text-base">{partnershipError}</p>
+          <p className="text-xs sm:text-sm text-gray-600">Make sure both users are verified and have completed the partner verification process.</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="h-full flex flex-col bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50">
+    <div className="h-full flex flex-col bg-gradient-to-br from-rose-50/80 via-pink-50/80 to-purple-50/80">
       <ChatHeader partner={partner} isOnline={isOnline} onVideoCall={handleVideoCall} />
       
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden relative">
         <MessageList 
           messages={messages} 
           currentUserId={currentUser.id} 
@@ -219,22 +217,33 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
       
       {/* Video Call Modal */}
       {callState.isCallActive && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="w-full max-w-4xl h-3/4 bg-white rounded-lg overflow-hidden">
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="w-full max-w-6xl h-full max-h-[95vh] bg-gray-900 rounded-xl sm:rounded-2xl overflow-hidden shadow-2xl">
             <div className="h-full flex flex-col">
-              <div className="bg-gray-800 text-white p-4 flex justify-between items-center">
-                <h3 className="text-lg font-semibold">Video Call with {partner.name}</h3>
+              <div className="bg-gray-900 text-white p-3 sm:p-4 flex justify-between items-center flex-shrink-0 border-b border-gray-700">
+                <h3 className="text-sm sm:text-lg font-semibold truncate flex items-center gap-2">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5 text-rose-500" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
+                  </svg>
+                  <span className="bg-gradient-to-r from-rose-400 to-pink-400 bg-clip-text text-transparent">
+                    Video Call with {partner.name}
+                  </span>
+                </h3>
                 <button
                   onClick={endCall}
-                  className="text-red-400 hover:text-red-300"
+                  className="text-gray-400 hover:text-white p-1 sm:p-2 text-lg sm:text-xl hover:bg-red-500/20 rounded-full transition-colors group"
+                  title="End Call"
                 >
-                  ✕
+                  <svg className="w-5 h-5 group-hover:text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
                 </button>
               </div>
-              <div className="flex-1">
-                <VideoCall
+              <div className="flex-1 min-h-0">
+                <VideoCallManager
                   roomId={callState.roomId!}
                   userId={currentUser.id}
+                  partnerName={partner.name}
                   onCallEnd={endCall}
                   className="w-full h-full"
                 />

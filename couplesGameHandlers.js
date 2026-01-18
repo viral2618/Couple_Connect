@@ -272,16 +272,43 @@ function handleCouplesGame(io) {
     socket.on('submit-answer', ({ roomId, answer }) => {
       try {
         const room = couplesRooms.get(roomId)
-        if (!room || room.gameState !== 'playing' || room.currentGame !== 'quickfire') return
-        
-        if (!room.gameData.answers) room.gameData.answers = {}
-        const player = room.players.find(p => p.socketId === socket.id)
-        if (player && !room.gameData.answers[player.id]) {
-          room.gameData.answers[player.id] = answer
-          room.lastActivity = Date.now()
+        if (!room || room.gameState !== 'playing' || room.currentGame !== 'quickfire') {
+          socket.emit('error', 'Invalid game state for answer submission')
+          return
         }
         
-        if (Object.keys(room.gameData.answers).length === 2) {
+        const player = room.players.find(p => p.socketId === socket.id)
+        if (!player) {
+          socket.emit('error', 'Player not found in room')
+          return
+        }
+        
+        if (!room.gameData.answers) room.gameData.answers = {}
+        
+        // Check if player already submitted
+        if (room.gameData.answers[player.id]) {
+          socket.emit('error', 'You have already submitted your answer')
+          return
+        }
+        
+        room.gameData.answers[player.id] = answer
+        room.lastActivity = Date.now()
+        
+        // Confirm submission to the player
+        socket.emit('answer-confirmed', {
+          playerId: player.id,
+          message: 'Your answer has been submitted successfully!'
+        })
+        
+        // Notify all players
+        io.to(roomId).emit('answer-submitted', {
+          playerId: player.id,
+          playerName: player.name,
+          totalAnswers: Object.keys(room.gameData.answers).length,
+          requiredAnswers: room.players.length
+        })
+        
+        if (Object.keys(room.gameData.answers).length === room.players.length) {
           io.to(roomId).emit('round-result', {
             answers: room.gameData.answers,
             scores: room.scores
