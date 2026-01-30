@@ -14,6 +14,9 @@ interface Message {
   senderId: string
   receiverId: string
   createdAt: string
+  seenAt?: string
+  replyTo?: string
+  reactions?: { emoji: string; userId: string }[]
   sender: {
     id: string
     name: string
@@ -42,6 +45,7 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
   const [isOnline, setIsOnline] = useState(false)
   const [canChat, setCanChat] = useState(false)
   const [partnershipError, setPartnershipError] = useState('')
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   
   const { callState, startCall, endCall } = useVideoCall()
@@ -82,6 +86,12 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
     socketInstance.on('receive-message', (message: Message) => {
       console.log('Received message:', message)
       setMessages(prev => [...prev, message])
+    })
+
+    socketInstance.on('message-reaction', (data: { messageId: string; reactions: { emoji: string; userId: string }[] }) => {
+      setMessages(prev => prev.map(msg => 
+        msg.id === data.messageId ? { ...msg, reactions: data.reactions } : msg
+      ))
     })
 
     setSocket(socketInstance)
@@ -148,7 +158,11 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
       const response = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: newMessage, receiverId: partner.id })
+        body: JSON.stringify({ 
+          content: newMessage, 
+          receiverId: partner.id,
+          replyTo: replyingTo?.id
+        })
       })
 
       console.log('API response status:', response.status)
@@ -165,6 +179,7 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
         }
         
         setNewMessage('')
+        setReplyingTo(null)
       } else {
         const errorData = await response.json()
         console.error('API error:', errorData)
@@ -181,6 +196,39 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
   const handleVideoCall = () => {
     const roomId = [currentUser.id, partner.id].sort().join('-')
     startCall(roomId, partner.id)
+  }
+
+  const handleReaction = async (messageId: string, emoji: string) => {
+    try {
+      const response = await fetch('/api/messages/reactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messageId, emoji })
+      })
+
+      if (response.ok) {
+        const updatedMessage = await response.json()
+        setMessages(prev => prev.map(msg => 
+          msg.id === messageId ? { ...msg, reactions: updatedMessage.reactions } : msg
+        ))
+        
+        // Emit reaction update via socket
+        if (socket) {
+          const roomId = [currentUser.id, partner.id].sort().join('-')
+          socket.emit('message-reaction', {
+            roomId,
+            messageId,
+            reactions: updatedMessage.reactions
+          })
+        }
+      }
+    } catch (error) {
+      console.error('Failed to update reaction:', error)
+    }
+  }
+
+  const handleReply = (message: Message) => {
+    setReplyingTo(message)
   }
 
   if (!canChat) {
@@ -206,6 +254,8 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
           currentUserId={currentUser.id} 
           isLoading={isLoading} 
           messagesEndRef={messagesEndRef}
+          onReaction={handleReaction}
+          onReply={handleReply}
         />
       </div>
 
@@ -213,6 +263,8 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
         newMessage={newMessage} 
         setNewMessage={setNewMessage} 
         sendMessage={sendMessage}
+        replyingTo={replyingTo}
+        onCancelReply={() => setReplyingTo(null)}
       />
       
       {/* Video Call Modal */}

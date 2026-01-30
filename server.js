@@ -234,6 +234,16 @@ app.prepare().then(() => {
       io.to(roomId).emit('receive-message', message)
     })
 
+    socket.on('message-reaction', (data) => {
+      const { roomId, messageId, reactions } = data
+      if (!roomId) {
+        console.error('No roomId in reaction:', data)
+        return
+      }
+      console.log('Broadcasting reaction to room:', roomId)
+      socket.to(roomId).emit('message-reaction', { messageId, reactions })
+    })
+
     // Legacy video call signaling (keeping for backward compatibility)
     socket.on('signal', ({ signal, roomId, userId }) => {
       console.log(`Legacy signal from ${userId} in room ${roomId}`)

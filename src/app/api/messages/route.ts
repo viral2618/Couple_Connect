@@ -11,13 +11,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { content, receiverId } = await req.json()
+    const { content, receiverId, replyTo } = await req.json()
 
     const message = await prisma.message.create({
       data: {
         content,
         senderId: session.userId,
-        receiverId
+        receiverId,
+        replyTo
       },
       include: {
         sender: { select: { id: true, name: true, avatar: true } }
