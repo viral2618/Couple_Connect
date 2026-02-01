@@ -1,5 +1,8 @@
 'use client'
 
+import { useState } from 'react'
+import { io } from 'socket.io-client'
+
 interface ChatHeaderProps {
   partner: {
     id: string
@@ -11,6 +14,42 @@ interface ChatHeaderProps {
 }
 
 export default function ChatHeader({ partner, isOnline, onVideoCall }: ChatHeaderProps) {
+  const [showRoomMenu, setShowRoomMenu] = useState(false)
+  const [roomCode, setRoomCode] = useState('')
+  const [currentRoom, setCurrentRoom] = useState<string | null>(null)
+
+  const createRoom = () => {
+    const socket = io()
+    socket.emit('create_room', { playerName: partner.name })
+    
+    socket.on('room_created', (data) => {
+      setCurrentRoom(data.roomCode)
+      setShowRoomMenu(false)
+      console.log('Room created:', data.roomCode)
+      socket.disconnect()
+    })
+  }
+
+  const joinRoom = () => {
+    if (!roomCode.trim()) return
+    
+    const socket = io()
+    socket.emit('join_room', { roomCode: roomCode.toUpperCase(), playerName: partner.name })
+    
+    socket.on('room_joined', (data) => {
+      setCurrentRoom(data.roomCode)
+      setShowRoomMenu(false)
+      setRoomCode('')
+      console.log('Joined room:', data.roomCode)
+      socket.disconnect()
+    })
+    
+    socket.on('error', (error) => {
+      alert(error.message)
+      socket.disconnect()
+    })
+  }
+
   return (
     <div className="bg-white/95 backdrop-blur-md border-b border-rose-200/50 px-3 sm:px-4 py-3 flex items-center justify-between shadow-lg sticky top-0 z-10">
       <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
@@ -35,11 +74,66 @@ export default function ChatHeader({ partner, isOnline, onVideoCall }: ChatHeade
             }">
               {isOnline ? 'Online' : 'Offline'}
             </p>
+            {currentRoom && (
+              <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                Room: {currentRoom}
+              </span>
+            )}
           </div>
         </div>
       </div>
       
       <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
+        <div className="relative">
+          <button
+            onClick={() => setShowRoomMenu(!showRoomMenu)}
+            className="p-2 sm:p-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-full hover:shadow-lg transition-all duration-300 hover:scale-105 active:scale-95"
+            title="Room Options"
+          >
+            <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z" />
+            </svg>
+          </button>
+          
+          {showRoomMenu && (
+            <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 p-4 z-50">
+              <div className="space-y-3">
+                <button
+                  onClick={createRoom}
+                  className="w-full bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600 transition-colors"
+                >
+                  Create Room
+                </button>
+                
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Room Code"
+                    value={roomCode}
+                    onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    maxLength={6}
+                  />
+                  <button
+                    onClick={joinRoom}
+                    disabled={!roomCode.trim()}
+                    className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:bg-gray-400 transition-colors"
+                  >
+                    Join
+                  </button>
+                </div>
+                
+                <button
+                  onClick={() => setShowRoomMenu(false)}
+                  className="w-full text-gray-500 text-sm hover:text-gray-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+        
         <button
           onClick={onVideoCall}
           className="p-2 sm:p-3 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full hover:shadow-lg transition-all duration-300 hover:scale-105 active:scale-95 hover:from-rose-600 hover:to-pink-600"

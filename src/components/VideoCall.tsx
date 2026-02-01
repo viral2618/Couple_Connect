@@ -36,27 +36,38 @@ export default function VideoCall({
   const [error, setError] = useState<string | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showStats, setShowStats] = useState(false)
+  const [otherUsers, setOtherUsers] = useState<string[]>([])
+  const [isInitiator, setIsInitiator] = useState(false)
 
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  const getSocketUrl = useCallback(() => {
+    if (process.env.NODE_ENV === 'production') {
+      return process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin
+    }
+    return 'http://localhost:3000'
+  }, [])
 
   const initializeMedia = useCallback(async () => {
     try {
       console.log('Initializing media for user:', userId)
       const constraints = {
         video: {
-          width: { ideal: 640, max: 1280 },
-          height: { ideal: 480, max: 720 },
-          frameRate: { ideal: 15, max: 30 },
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+          frameRate: { ideal: 30, max: 30 },
           facingMode: 'user'
         },
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          sampleRate: 44100
         }
       }
       
@@ -88,7 +99,6 @@ export default function VideoCall({
       audioContextRef.current = audioContext
       analyserRef.current = analyser
       
-      // Monitor audio levels
       const monitorAudio = () => {
         if (analyserRef.current) {
           const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
@@ -107,7 +117,6 @@ export default function VideoCall({
   const createPeer = useCallback((initiator: boolean, stream: MediaStream, targetSocket: Socket) => {
     console.log(`Creating peer - initiator: ${initiator}, roomId: ${roomId}, userId: ${userId}`)
     
-    // Destroy existing peer if any
     if (peer) {
       console.log('Destroying existing peer before creating new one')
       peer.destroy()
@@ -123,7 +132,9 @@ export default function VideoCall({
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:global.stun.twilio.com:3478' },
           { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' }
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' }
         ],
         iceCandidatePoolSize: 10
       }
@@ -144,7 +155,7 @@ export default function VideoCall({
     })
 
     newPeer.on('connect', () => {
-      console.log('Peer connected')
+      console.log('Peer connected successfully')
       setIsConnected(true)
       setCallStats(prev => ({ ...prev, connectionState: 'connected' }))
     })
@@ -159,20 +170,33 @@ export default function VideoCall({
       console.error('Peer error:', err)
       setError(`Connection error: ${err.message}`)
       setCallStats(prev => ({ ...prev, connectionState: 'failed' }))
+      
+      // Attempt reconnection after a delay
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+      }
+      reconnectTimeoutRef.current = setTimeout(() => {
+        console.log('Attempting to reconnect...')
+        if (stream && targetSocket.connected) {
+          const reconnectPeer = createPeer(initiator, stream, targetSocket)
+          setPeer(reconnectPeer)
+        }
+      }, 3000)
     })
 
     return newPeer
-  }, [roomId, userId, peer])
+  }, [roomId, userId, peer, stream])
 
   useEffect(() => {
     if (!stream) return
     
-    const newSocket = io(process.env.NODE_ENV === 'production' 
-      ? process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin
-      : 'http://localhost:3000', {
-      transports: ['websocket'],
+    const newSocket = io(getSocketUrl(), {
+      transports: ['websocket', 'polling'],
       timeout: 20000,
-      forceNew: true
+      forceNew: true,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
     })
     
     setSocket(newSocket)
@@ -183,13 +207,25 @@ export default function VideoCall({
       newSocket.emit('join-video-room', { roomId, userId })
     })
 
-    newSocket.on('user-joined-video', ({ userId: joinedUserId }) => {
-      console.log(`User joined video: ${joinedUserId}`)
-      if (joinedUserId !== userId && stream) {
-        console.log('Creating initiator peer for joined user')
+    newSocket.on('video-room-joined', ({ otherUsers: users, totalUsers }) => {
+      console.log(`Joined video room. Total users: ${totalUsers}, Other users:`, users)
+      setOtherUsers(users)
+      
+      // If there's another user, become the initiator
+      if (users.length > 0 && stream) {
+        console.log('Becoming initiator for existing users')
+        setIsInitiator(true)
         const newPeer = createPeer(true, stream, newSocket)
         setPeer(newPeer)
         setCallStats(prev => ({ ...prev, connectionState: 'connecting' }))
+      }
+    })
+
+    newSocket.on('user-joined-video', ({ userId: joinedUserId, totalUsers }) => {
+      console.log(`User joined video: ${joinedUserId}, Total: ${totalUsers}`)
+      if (joinedUserId !== userId && stream && !peer) {
+        console.log('New user joined, waiting for their signal')
+        setOtherUsers(prev => [...prev, joinedUserId])
       }
     })
 
@@ -202,14 +238,18 @@ export default function VideoCall({
             const newPeer = createPeer(false, stream, newSocket)
             setIsIncoming(true)
             setCallStats(prev => ({ ...prev, connectionState: 'connecting' }))
-            newPeer.signal(signal)
+            try {
+              newPeer.signal(signal)
+            } catch (error) {
+              console.error('Error signaling new peer:', error)
+            }
             return newPeer
           } else if (currentPeer) {
             console.log('Signaling existing peer')
             try {
               currentPeer.signal(signal)
             } catch (error) {
-              console.error('Error signaling peer:', error)
+              console.error('Error signaling existing peer:', error)
             }
             return currentPeer
           }
@@ -218,10 +258,11 @@ export default function VideoCall({
       }
     })
 
-    newSocket.on('user-left-video', ({ userId: leftUserId }) => {
-      console.log(`User left video: ${leftUserId}`)
+    newSocket.on('user-left-video', ({ userId: leftUserId, totalUsers }) => {
+      console.log(`User left video: ${leftUserId}, Remaining: ${totalUsers}`)
       if (leftUserId !== userId) {
         setIsConnected(false)
+        setOtherUsers(prev => prev.filter(id => id !== leftUserId))
         setPeer(currentPeer => {
           if (currentPeer) {
             currentPeer.destroy()
@@ -237,13 +278,21 @@ export default function VideoCall({
       setError(message)
     })
 
-    // If socket is already connected, join immediately
-    if (newSocket.connected) {
+    newSocket.on('disconnect', () => {
+      console.log('Socket disconnected')
+      setCallStats(prev => ({ ...prev, connectionState: 'disconnected' }))
+    })
+
+    newSocket.on('reconnect', () => {
+      console.log('Socket reconnected')
       newSocket.emit('join-video-room', { roomId, userId })
-    }
+    })
 
     return () => {
       console.log('Cleaning up video call')
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+      }
       setPeer(currentPeer => {
         if (currentPeer) {
           currentPeer.destroy()
@@ -253,7 +302,7 @@ export default function VideoCall({
       newSocket.emit('leave-video-room', { roomId, userId })
       newSocket.disconnect()
     }
-  }, [stream, roomId, userId, createPeer])
+  }, [stream, roomId, userId, createPeer, getSocketUrl, peer])
 
   useEffect(() => {
     initializeMedia()
@@ -277,8 +326,11 @@ export default function VideoCall({
       if (audioContextRef.current) {
         audioContextRef.current.close()
       }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+      }
     }
-  }, []) // Remove dependencies to prevent recreation
+  }, [])
 
   const toggleMute = () => {
     if (stream) {
@@ -309,11 +361,15 @@ export default function VideoCall({
   }
 
   const endCall = () => {
+    console.log('Ending call...')
     stream?.getTracks().forEach(track => track.stop())
     peer?.destroy()
     socket?.emit('leave-video-room', { roomId, userId })
     socket?.disconnect()
     audioContextRef.current?.close()
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
+    }
     onCallEnd?.()
   }
 
@@ -371,9 +427,10 @@ export default function VideoCall({
           <div className="text-white text-center p-6">
             <div className="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
             <h3 className="text-xl font-semibold mb-2">
-              {isIncoming ? 'Connecting...' : 'Waiting for partner...'}
+              {otherUsers.length === 0 ? 'Waiting for partner...' : 'Connecting...'}
             </h3>
             <p className="text-gray-300">Connection state: {callStats.connectionState}</p>
+            <p className="text-sm text-gray-400 mt-2">Room: {roomId}</p>
           </div>
         </div>
       )}
@@ -384,6 +441,7 @@ export default function VideoCall({
           <div>Status: {callStats.connectionState}</div>
           <div>Audio: {callStats.audioLevel.toFixed(0)}dB</div>
           <div>Quality: {callStats.videoQuality}</div>
+          <div>Users: {otherUsers.length + 1}/2</div>
         </div>
       )}
 

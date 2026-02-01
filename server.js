@@ -6,7 +6,7 @@ const { PrismaClient } = require('@prisma/client')
 
 const prisma = new PrismaClient({
   errorFormat: 'pretty',
-  log: ['query', 'info', 'warn', 'error'],
+  log: process.env.NODE_ENV === 'production' ? ['error'] : ['query', 'info', 'warn', 'error'],
 })
 
 prisma.$connect()
@@ -23,8 +23,9 @@ const port = process.env.PORT || 3000
 const app = next({ dev, hostname, port })
 const handle = app.getRequestHandler()
 
-// Simple room management
+// Global room management for all features
 const rooms = new Map()
+const videoRooms = new Map()
 
 function generateRoomCode() {
   let code
@@ -74,12 +75,14 @@ app.prepare().then(() => {
   const io = new Server(server, {
     cors: {
       origin: process.env.NODE_ENV === 'production' 
-        ? [process.env.NEXT_PUBLIC_APP_URL || "https://your-domain.com"]
+        ? [process.env.NEXT_PUBLIC_APP_URL, "https://couple-connect.vercel.app", "https://*.vercel.app"]
         : ["http://localhost:3000", "http://127.0.0.1:3000"],
       methods: ["GET", "POST"],
       credentials: true
     },
-    transports: ['websocket', 'polling']
+    transports: ['websocket', 'polling'],
+    pingTimeout: 60000,
+    pingInterval: 25000
   })
 
   // Import couples game handlers
@@ -91,169 +94,191 @@ app.prepare().then(() => {
     // Setup couples game handlers for this socket
     setupCouplesGameHandlers(io, socket, rooms)
 
-    // Video call room management with security
-    const videoRooms = new Map()
-    
-    // Secure video room joining with validation
+    // Enhanced video calling system for 2-way calls only
     socket.on('join-video-room', ({ roomId, userId }) => {
-      try {
-        console.log(`[VIDEO] Join request - Room: ${roomId}, User: ${userId}, Socket: ${socket.id}`)
-        
-        // Skip validation for test users - allow any test-user-* to join test rooms
-        if (userId.startsWith('test-user-') && roomId.includes('test-user-')) {
-          console.log(`[VIDEO] Test user access granted - Room: ${roomId}, User: ${userId}`)
-        } else {
-          // Normal validation for real users
-          if (!roomId || typeof roomId !== 'string' || !roomId.includes('-')) {
-            socket.emit('video-error', { message: 'Invalid room ID format' })
-            return
-          }
-          
-          if (!userId || typeof userId !== 'string') {
-            socket.emit('video-error', { message: 'Invalid user ID' })
-            return
-          }
+      if (!roomId || !userId) {
+        socket.emit('video-error', { message: 'Invalid room or user ID' })
+        return
+      }
+      
+      console.log(`User ${userId} attempting to join video room: ${roomId}`)
+      
+      if (!videoRooms.has(roomId)) {
+        videoRooms.set(roomId, { 
+          users: new Map(), 
+          createdAt: Date.now(), 
+          maxUsers: 2,
+          isActive: false
+        })
+      }
+      
+      const room = videoRooms.get(roomId)
+      
+      // Check if room is full (only 2 users allowed)
+      if (room.users.size >= room.maxUsers && !room.users.has(userId)) {
+        socket.emit('video-error', { message: 'Video call is full. Only 2 people can join.' })
+        return
+      }
+      
+      // Add user to room
+      room.users.set(userId, { socketId: socket.id, joinedAt: Date.now() })
+      socket.join(roomId)
+      
+      // Notify existing users about new user
+      socket.to(roomId).emit('user-joined-video', { userId, totalUsers: room.users.size })
+      
+      // Send current room state to joining user
+      socket.emit('video-room-joined', { 
+        roomId, 
+        userId, 
+        totalUsers: room.users.size,
+        otherUsers: Array.from(room.users.keys()).filter(id => id !== userId)
+      })
+      
+      console.log(`User ${userId} joined video room: ${roomId}. Total users: ${room.users.size}`)
+    })
+
+    socket.on('video-signal', ({ signal, roomId, userId, targetUserId }) => {
+      if (!signal || !roomId || !userId) {
+        socket.emit('video-error', { message: 'Invalid signal data' })
+        return
+      }
+      
+      const room = videoRooms.get(roomId)
+      if (!room || !room.users.has(userId)) {
+        socket.emit('video-error', { message: 'User not in video room' })
+        return
+      }
+      
+      // Send signal to specific user or broadcast to room
+      if (targetUserId) {
+        const targetUser = room.users.get(targetUserId)
+        if (targetUser) {
+          io.to(targetUser.socketId).emit('video-signal', { signal, userId, roomId })
         }
-        
-        socket.join(roomId)
-        
-        // Initialize room if it doesn't exist
-        if (!videoRooms.has(roomId)) {
-          videoRooms.set(roomId, {
-            users: new Set(),
-            createdAt: Date.now(),
-            maxUsers: 2
-          })
-          console.log(`[VIDEO] Created new room: ${roomId}`)
-        }
-        
-        const room = videoRooms.get(roomId)
-        
-        // Check if user is already in the room
-        if (room.users.has(userId)) {
-          console.log(`[VIDEO] User ${userId} already in room ${roomId}`)
-          return
-        }
-        
-        // Check room capacity
-        if (room.users.size >= room.maxUsers) {
-          console.log(`[VIDEO] Room ${roomId} is full`)
-          socket.emit('video-error', { message: 'Room is full' })
-          return
-        }
-        
-        room.users.add(userId)
-        
-        console.log(`[VIDEO] User ${userId} joined video room: ${roomId} (${room.users.size}/${room.maxUsers} users)`)
-        
-        // Notify other users in the room that this user joined
-        socket.to(roomId).emit('user-joined-video', { userId })
-        
-      } catch (error) {
-        console.error('[VIDEO] Error joining video room:', error)
-        socket.emit('video-error', { message: 'Failed to join video room' })
+      } else {
+        socket.to(roomId).emit('video-signal', { signal, userId, roomId })
       }
     })
 
-    // Secure video signaling with validation
-    socket.on('video-signal', ({ signal, roomId, userId }) => {
-      try {
-        console.log(`[VIDEO] Signal from ${userId} in room ${roomId}:`, signal.type || 'candidate')
-        
-        // Validate inputs
-        if (!signal || !roomId || !userId) {
-          console.log('[VIDEO] Invalid signal data')
-          socket.emit('video-error', { message: 'Invalid signal data' })
-          return
-        }
-        
-        // Skip validation for test users
-        if (userId.startsWith('test-user-') && roomId.includes('test-user-')) {
-          // Allow test users to signal without validation
-          console.log(`[VIDEO] Test user signal allowed - ${userId} in ${roomId}`)
-        } else {
-          // Normal validation for real users would go here
-          // Add any additional validation for real users if needed
-        }
-        
-        // Validate signal structure (basic WebRTC signal validation)
-        if (typeof signal !== 'object' || (!signal.type && !signal.candidate)) {
-          console.log('[VIDEO] Invalid signal format:', signal)
-          socket.emit('video-error', { message: 'Invalid signal format' })
-          return
-        }
-        
-        console.log(`[VIDEO] Broadcasting signal from ${userId} to room ${roomId}`)
-        socket.to(roomId).emit('video-signal', { signal, userId })
-        
-      } catch (error) {
-        console.error('[VIDEO] Error handling video signal:', error)
-        socket.emit('video-error', { message: 'Failed to process signal' })
-      }
-    })
-
-    // Secure video room leaving
     socket.on('leave-video-room', ({ roomId, userId }) => {
-      try {
-        if (!roomId || !userId) return
-        
-        console.log(`[VIDEO] User ${userId} leaving video room ${roomId}`)
-        socket.to(roomId).emit('user-left-video', { userId })
+      if (!roomId || !userId) return
+      
+      console.log(`User ${userId} leaving video room: ${roomId}`)
+      
+      const room = videoRooms.get(roomId)
+      if (room && room.users.has(userId)) {
+        room.users.delete(userId)
         socket.leave(roomId)
         
-        // Clean up room data
-        const room = videoRooms.get(roomId)
-        if (room) {
-          room.users.delete(userId)
-          console.log(`[VIDEO] Room ${roomId} now has ${room.users.size} users`)
-          if (room.users.size === 0) {
-            videoRooms.delete(roomId)
-            console.log(`[VIDEO] Deleted empty room ${roomId}`)
-          }
-        }
+        // Notify other users
+        socket.to(roomId).emit('user-left-video', { userId, totalUsers: room.users.size })
         
-      } catch (error) {
-        console.error('[VIDEO] Error leaving video room:', error)
+        // Clean up empty rooms
+        if (room.users.size === 0) {
+          videoRooms.delete(roomId)
+          console.log(`Video room ${roomId} deleted - no users remaining`)
+        }
       }
     })
 
-    // Regular chat room management
+    // Handle video call initiation
+    socket.on('initiate-video-call', ({ roomId, userId, targetUserId }) => {
+      const room = videoRooms.get(roomId)
+      if (room && room.users.has(targetUserId)) {
+        const targetUser = room.users.get(targetUserId)
+        io.to(targetUser.socketId).emit('incoming-video-call', { 
+          roomId, 
+          callerId: userId,
+          callerSocketId: socket.id
+        })
+      }
+    })
+
+    // Handle video call response
+    socket.on('video-call-response', ({ roomId, callerId, accepted, userId }) => {
+      const room = videoRooms.get(roomId)
+      if (room && room.users.has(callerId)) {
+        const callerUser = room.users.get(callerId)
+        io.to(callerUser.socketId).emit('video-call-answered', { 
+          accepted, 
+          answeredBy: userId,
+          roomId 
+        })
+        
+        if (accepted) {
+          room.isActive = true
+          // Notify both users that call is starting
+          io.to(roomId).emit('video-call-started', { roomId, participants: [callerId, userId] })
+        }
+      }
+    })
+
+    // Chat room management
     socket.on('join-room', (roomId) => {
       socket.join(roomId)
-      console.log(`User joined chat room: ${roomId}`)
       socket.to(roomId).emit('user-joined', { userId: socket.id })
     })
 
     socket.on('send-message', (message) => {
-      const roomId = message.roomId
-      if (!roomId) {
-        console.error('No roomId in message:', message)
-        return
-      }
-      console.log('Broadcasting message to room:', roomId)
-      io.to(roomId).emit('receive-message', message)
+      if (!message.roomId) return
+      io.to(message.roomId).emit('receive-message', message)
     })
 
     socket.on('message-reaction', (data) => {
-      const { roomId, messageId, reactions } = data
-      if (!roomId) {
-        console.error('No roomId in reaction:', data)
-        return
-      }
-      console.log('Broadcasting reaction to room:', roomId)
-      socket.to(roomId).emit('message-reaction', { messageId, reactions })
+      if (!data.roomId) return
+      socket.to(data.roomId).emit('message-reaction', { messageId: data.messageId, reactions: data.reactions })
     })
 
-    // Legacy video call signaling (keeping for backward compatibility)
+    // Universal signaling for video calls
     socket.on('signal', ({ signal, roomId, userId }) => {
-      console.log(`Legacy signal from ${userId} in room ${roomId}`)
       socket.to(roomId).emit('signal', { signal, userId })
     })
 
     socket.on('leave-room', ({ roomId, userId }) => {
-      console.log(`User ${userId} leaving chat room ${roomId}`)
       socket.to(roomId).emit('user-left', { userId })
       socket.leave(roomId)
+    })
+
+    // Handle disconnection cleanup
+    socket.on('disconnect', () => {
+      console.log('User disconnected:', socket.id)
+      
+      // Clean up video rooms
+      for (const [roomId, room] of videoRooms.entries()) {
+        for (const [userId, userData] of room.users.entries()) {
+          if (userData.socketId === socket.id) {
+            room.users.delete(userId)
+            socket.to(roomId).emit('user-left-video', { userId, totalUsers: room.users.size })
+            console.log(`Cleaned up user ${userId} from video room ${roomId} on disconnect`)
+            
+            if (room.users.size === 0) {
+              videoRooms.delete(roomId)
+              console.log(`Video room ${roomId} deleted on disconnect`)
+            }
+            break
+          }
+        }
+      }
+      
+      // Clean up game rooms
+      for (const [roomCode, room] of rooms.entries()) {
+        if (room.host && room.host.socketId === socket.id) {
+          // Host disconnected, notify guests and clean up
+          socket.to(roomCode).emit('host_disconnected')
+          if (room.gameData && room.gameData.timer) {
+            clearTimeout(room.gameData.timer)
+          }
+          rooms.delete(roomCode)
+          console.log(`Room ${roomCode} deleted - host disconnected`)
+        } else if (room.guest && room.guest.socketId === socket.id) {
+          // Guest disconnected
+          room.guest = null
+          room.players = room.players.filter(p => p.socketId !== socket.id)
+          socket.to(roomCode).emit('guest_disconnected')
+          console.log(`Guest left room ${roomCode}`)
+        }
+      }
     })
 
     // Handle room creation
@@ -288,8 +313,7 @@ app.prepare().then(() => {
         rooms.set(roomCode, room)
         socket.join(roomCode)
         
-        // Create clean room data for emission
-        const roomCreatedData = {
+        socket.emit('room_created', {
           roomId: roomCode,
           roomCode: roomCode,
           room: {
@@ -301,9 +325,7 @@ app.prepare().then(() => {
             currentGame: room.currentGame,
             scores: { ...room.scores }
           }
-        }
-        
-        socket.emit('room_created', roomCreatedData)
+        })
         
         console.log('Room created:', roomCode, 'by', playerName)
       } catch (error) {
@@ -345,8 +367,7 @@ app.prepare().then(() => {
         
         socket.join(data.roomCode)
         
-        // Create clean room data for emission
-        const roomJoinedData = {
+        socket.emit('room_joined', {
           roomId: data.roomCode,
           roomCode: data.roomCode,
           room: {
@@ -359,12 +380,9 @@ app.prepare().then(() => {
             currentGame: room.currentGame,
             scores: { ...room.scores }
           }
-        }
+        })
         
-        socket.emit('room_joined', roomJoinedData)
-        
-        // Create clean room update data
-        const roomUpdateData = {
+        io.to(data.roomCode).emit('room-update', {
           id: room.id,
           code: room.code,
           host: { id: room.host.id },
@@ -373,46 +391,12 @@ app.prepare().then(() => {
           gameState: room.gameState,
           currentGame: room.currentGame,
           scores: { ...room.scores }
-        }
-        
-        io.to(data.roomCode).emit('room-update', roomUpdateData)
+        })
         
         console.log('Player', playerName, 'joined room:', data.roomCode)
       } catch (error) {
         console.error('Error joining room:', error)
         socket.emit('error', { message: error.message })
-      }
-    })
-
-    socket.on('disconnect', () => {
-      console.log('User disconnected:', socket.id)
-      // Clean up rooms when players disconnect
-      for (const [roomCode, room] of rooms.entries()) {
-        if (room.host && room.host.socketId === socket.id) {
-          // Clean up any timers if they exist
-          if (room.gameData && room.gameData.timer) {
-            clearTimeout(room.gameData.timer)
-          }
-          rooms.delete(roomCode)
-          io.to(roomCode).emit('room_closed', { reason: 'Host disconnected' })
-        } else if (room.guest && room.guest.socketId === socket.id) {
-          room.guest = null
-          room.players = room.players.filter(p => p.socketId !== socket.id)
-          
-          // Create clean room update data
-          const roomUpdateData = {
-            id: room.id,
-            code: room.code,
-            host: { id: room.host.id },
-            guest: null,
-            players: room.players.map(p => ({ id: p.id, name: p.name })),
-            gameState: room.gameState,
-            currentGame: room.currentGame,
-            scores: { ...room.scores }
-          }
-          
-          io.to(roomCode).emit('room-update', roomUpdateData)
-        }
       }
     })
   })
