@@ -24,7 +24,6 @@ export default function VideoTestPage() {
         <VideoCall 
           roomId={roomId}
           userId={userId}
-          onEndCall={endCall}
         />
       </div>
     )

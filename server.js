@@ -20,7 +20,7 @@ const dev = process.env.NODE_ENV !== 'production'
 const hostname = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost'
 const port = process.env.PORT || 3000
 
-const app = next({ dev, hostname, port })
+const app = next({ dev })
 const handle = app.getRequestHandler()
 
 // Global room management for all features

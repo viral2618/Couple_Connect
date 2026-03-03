@@ -13,6 +13,24 @@ interface ChatHeaderProps {
   onVideoCall?: () => void
 }
 
+interface RoomData {
+  roomCode: string
+  room: {
+    id: string
+    code: string
+    host: { id: string }
+    guest?: { id: string }
+    players: Array<{ id: string; name: string }>
+    gameState: string
+    currentGame: string
+    scores: Record<string, number>
+  }
+}
+
+interface ErrorData {
+  message: string
+}
+
 export default function ChatHeader({ partner, isOnline, onVideoCall }: ChatHeaderProps) {
   const [showRoomMenu, setShowRoomMenu] = useState(false)
   const [roomCode, setRoomCode] = useState('')
@@ -22,7 +40,7 @@ export default function ChatHeader({ partner, isOnline, onVideoCall }: ChatHeade
     const socket = io()
     socket.emit('create_room', { playerName: partner.name })
     
-    socket.on('room_created', (data) => {
+    socket.on('room_created', (data: RoomData) => {
       setCurrentRoom(data.roomCode)
       setShowRoomMenu(false)
       console.log('Room created:', data.roomCode)
@@ -36,7 +54,7 @@ export default function ChatHeader({ partner, isOnline, onVideoCall }: ChatHeade
     const socket = io()
     socket.emit('join_room', { roomCode: roomCode.toUpperCase(), playerName: partner.name })
     
-    socket.on('room_joined', (data) => {
+    socket.on('room_joined', (data: RoomData) => {
       setCurrentRoom(data.roomCode)
       setShowRoomMenu(false)
       setRoomCode('')
@@ -44,7 +62,7 @@ export default function ChatHeader({ partner, isOnline, onVideoCall }: ChatHeade
       socket.disconnect()
     })
     
-    socket.on('error', (error) => {
+    socket.on('error', (error: ErrorData) => {
       alert(error.message)
       socket.disconnect()
     })
@@ -69,9 +87,9 @@ export default function ChatHeader({ partner, isOnline, onVideoCall }: ChatHeade
           <h3 className="font-bold text-gray-800 text-sm sm:text-base truncate">{partner.name}</h3>
           <div className="flex items-center gap-1">
             <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-gray-400'}`}></div>
-            <p className="text-xs sm:text-sm font-medium ${
+            <p className={`text-xs sm:text-sm font-medium ${
               isOnline ? 'text-green-600' : 'text-gray-500'
-            }">
+            }`}>
               {isOnline ? 'Online' : 'Offline'}
             </p>
             {currentRoom && (
