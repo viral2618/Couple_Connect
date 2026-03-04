@@ -136,20 +136,27 @@ function setupCouplesGameHandlers(io, socket, rooms) {
     const room = rooms.get(roomId)
     
     if (!room) {
-      console.log('Room not found:', roomId)
+      console.log('Room not found:', roomId, 'Available rooms:', Array.from(rooms.keys()))
       socket.emit('error', 'Room not found')
       return
     }
     
     if (room.players.length < 2) {
-      console.log('Not enough players:', room.players.length)
+      console.log('Not enough players:', room.players.length, 'Players:', room.players.map(p => p.id))
       socket.emit('error', 'Need 2 players to start')
       return
     }
     
     // Check if player is host
     const player = room.players.find(p => p.socketId === socket.id)
-    if (!player || player.id !== room.hostId) {
+    if (!player) {
+      console.log('Player not found in room. Socket ID:', socket.id, 'Room players:', room.players.map(p => ({ id: p.id, socketId: p.socketId })))
+      socket.emit('error', 'Player not found in room')
+      return
+    }
+    
+    if (player.id !== room.hostId) {
+      console.log('Only host can start game. Player:', player.id, 'Host:', room.hostId)
       socket.emit('error', 'Only the host can start the game')
       return
     }
@@ -167,11 +174,8 @@ function setupCouplesGameHandlers(io, socket, rooms) {
       timer: null
     }
     
-    console.log('Sending game data:', {
-      question: randomQuestion,
-      round: room.gameData.currentRound,
-      roomId: roomId
-    })
+    console.log('Starting game for room:', roomId, 'with', room.players.length, 'players')
+    console.log('Socket rooms for this socket:', Array.from(socket.rooms))
     
     // Create clean data objects for emission
     const gameStartedData = {
@@ -190,6 +194,10 @@ function setupCouplesGameHandlers(io, socket, rooms) {
       gameType: gameType,
       showResults: false
     }
+    
+    // Emit to all sockets in the room
+    const socketsInRoom = io.sockets.adapter.rooms.get(roomId)
+    console.log('Sockets in room', roomId, ':', socketsInRoom ? Array.from(socketsInRoom) : 'none')
     
     io.to(roomId).emit('game-started', gameStartedData)
     io.to(roomId).emit('game-data', gameData)

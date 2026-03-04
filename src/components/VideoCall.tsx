@@ -57,7 +57,6 @@ export default function VideoCall({
     try {
       console.log('Initializing media for user:', userId)
       
-      // Check if media devices are available
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Media devices not supported')
       }
@@ -80,7 +79,6 @@ export default function VideoCall({
       const mediaStream = await navigator.mediaDevices.getUserMedia(constraints)
       console.log('Media stream obtained:', mediaStream.getTracks().length, 'tracks')
       
-      // Verify tracks are active
       const videoTracks = mediaStream.getVideoTracks()
       const audioTracks = mediaStream.getAudioTracks()
       
@@ -103,7 +101,6 @@ export default function VideoCall({
       console.error('Error accessing media devices:', error)
       setError(`Camera/Microphone access denied: ${error.message}`)
       
-      // Try audio-only fallback
       try {
         const audioOnlyStream = await navigator.mediaDevices.getUserMedia({ audio: true })
         setStream(audioOnlyStream)
@@ -157,112 +154,32 @@ export default function VideoCall({
       config: {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:global.stun.twilio.com:3478' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' },
-          {
-            urls: 'turn:relay1.expressturn.com:3478',
-            username: 'ef3CQZAC2ZEQT3LJ',
-            credential: 'Zh6ysHKXJV8mxnLh'
-          }
-        ],
-        iceCandidatePoolSize: 10,
-        iceTransportPolicy: 'all',
-        bundlePolicy: 'max-bundle',
-        rtcpMuxPolicy: 'require'
-      },
-      offerOptions: {
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: true
-      },
-      answerOptions: {
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: true
+          { urls: 'stun:global.stun.twilio.com:3478' }
+        ]
       }
     })
-
-    let signalTimeout: NodeJS.Timeout
-    let connectionTimeout: NodeJS.Timeout
 
     newPeer.on('signal', (signal) => {
       console.log('Sending signal:', signal.type || 'candidate')
       targetSocket.emit('video-signal', { signal, roomId, userId })
-      
-      // Set timeout for signal response
-      if (signalTimeout) clearTimeout(signalTimeout)
-      signalTimeout = setTimeout(() => {
-        console.log('Signal timeout, attempting reconnection')
-        if (!newPeer.destroyed) {
-          newPeer.destroy()
-          setError('Connection timeout - please try again')
-        }
-      }, 15000)
     })
 
     newPeer.on('stream', (remoteStream) => {
       console.log('Received remote stream')
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStream
-        remoteVideoRef.current.onloadedmetadata = () => {
-          remoteVideoRef.current?.play().catch(console.error)
-        }
+        remoteVideoRef.current.play().catch(console.error)
       }
       setIsConnected(true)
-      setCallStats(prev => ({ ...prev, connectionState: 'connected' }))
-      if (signalTimeout) clearTimeout(signalTimeout)
-      if (connectionTimeout) clearTimeout(connectionTimeout)
-    })
-
-    newPeer.on('connect', () => {
-      console.log('Peer connected successfully')
-      setIsConnected(true)
-      setCallStats(prev => ({ ...prev, connectionState: 'connected' }))
-      if (signalTimeout) clearTimeout(signalTimeout)
-      if (connectionTimeout) clearTimeout(connectionTimeout)
-    })
-
-    newPeer.on('close', () => {
-      console.log('Peer connection closed')
-      setIsConnected(false)
-      setCallStats(prev => ({ ...prev, connectionState: 'disconnected' }))
-      if (signalTimeout) clearTimeout(signalTimeout)
-      if (connectionTimeout) clearTimeout(connectionTimeout)
     })
 
     newPeer.on('error', (err) => {
       console.error('Peer error:', err)
       setError(`Connection error: ${err.message}`)
-      setCallStats(prev => ({ ...prev, connectionState: 'failed' }))
-      
-      if (signalTimeout) clearTimeout(signalTimeout)
-      if (connectionTimeout) clearTimeout(connectionTimeout)
-      
-      // Attempt reconnection after a delay
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current)
-      }
-      reconnectTimeoutRef.current = setTimeout(() => {
-        console.log('Attempting to reconnect...')
-        if (stream && targetSocket.connected && !newPeer.destroyed) {
-          const reconnectPeer = createPeer(initiator, stream, targetSocket)
-          setPeer(reconnectPeer)
-        }
-      }, 3000)
     })
 
-    // Set overall connection timeout
-    connectionTimeout = setTimeout(() => {
-      if (!isConnected && !newPeer.destroyed) {
-        console.log('Connection timeout, destroying peer')
-        newPeer.destroy()
-        setError('Connection timeout - please check your internet connection')
-      }
-    }, 30000)
-
     return newPeer
-  }, [roomId, userId, peer, stream, isConnected])
+  }, [roomId, userId, peer])
 
   useEffect(() => {
     if (!stream) return
@@ -313,13 +230,11 @@ export default function VideoCall({
       setOtherUsers(users)
       setError(null)
       
-      // If there's another user, become the initiator
       if (users.length > 0 && stream) {
         console.log('Becoming initiator for existing users')
         setIsInitiator(true)
         const newPeer = createPeer(true, stream, newSocket)
         setPeer(newPeer)
-        setCallStats(prev => ({ ...prev, connectionState: 'connecting' }))
       }
     })
 
@@ -334,29 +249,16 @@ export default function VideoCall({
     newSocket.on('video-signal', ({ signal, userId: senderId }) => {
       console.log(`Received signal from ${senderId}:`, signal.type || 'candidate')
       if (senderId !== userId) {
-        setPeer(currentPeer => {
-          if (!currentPeer && stream) {
-            console.log('Creating receiver peer for signal')
-            const newPeer = createPeer(false, stream, newSocket)
-            setIsIncoming(true)
-            setCallStats(prev => ({ ...prev, connectionState: 'connecting' }))
-            try {
-              newPeer.signal(signal)
-            } catch (error) {
-              console.error('Error signaling new peer:', error)
-            }
-            return newPeer
-          } else if (currentPeer && !currentPeer.destroyed) {
-            console.log('Signaling existing peer')
-            try {
-              currentPeer.signal(signal)
-            } catch (error) {
-              console.error('Error signaling existing peer:', error)
-            }
-            return currentPeer
-          }
-          return currentPeer
-        })
+        if (!peer && stream) {
+          console.log('Creating receiver peer for signal')
+          const newPeer = createPeer(false, stream, newSocket)
+          setPeer(newPeer)
+          setIsIncoming(true)
+          newPeer.signal(signal)
+        } else if (peer && !peer.destroyed) {
+          console.log('Signaling existing peer')
+          peer.signal(signal)
+        }
       }
     })
 
@@ -384,7 +286,6 @@ export default function VideoCall({
       console.log('Socket disconnected:', reason)
       setCallStats(prev => ({ ...prev, connectionState: 'disconnected' }))
       if (reason === 'io server disconnect') {
-        // Server disconnected, try to reconnect
         newSocket.connect()
       }
     })
@@ -440,7 +341,7 @@ export default function VideoCall({
         clearTimeout(reconnectTimeoutRef.current)
       }
     }
-  }, [])
+  }, [initializeMedia])
 
   const toggleMute = () => {
     if (stream) {

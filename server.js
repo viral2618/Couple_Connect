@@ -75,17 +75,42 @@ app.prepare().then(() => {
   const io = new Server(server, {
     cors: {
       origin: process.env.NODE_ENV === 'production' 
-        ? [process.env.NEXT_PUBLIC_APP_URL, "https://coupleconnect-production-35ae.up.railway.app", "https://*.up.railway.app", "https://couple-connect.vercel.app", "https://*.vercel.app"]
+        ? function(origin, callback) {
+            // Allow requests with no origin (mobile apps, etc.)
+            if (!origin) return callback(null, true)
+            
+            const allowedOrigins = [
+              process.env.NEXT_PUBLIC_APP_URL,
+              "https://coupleconnect-production-35ae.up.railway.app",
+              /https:\/\/.*\.up\.railway\.app$/,
+              "https://couple-connect.vercel.app",
+              /https:\/\/.*\.vercel\.app$/
+            ]
+            
+            const isAllowed = allowedOrigins.some(allowed => {
+              if (typeof allowed === 'string') {
+                return allowed === origin
+              } else if (allowed instanceof RegExp) {
+                return allowed.test(origin)
+              }
+              return false
+            })
+            
+            callback(null, isAllowed)
+          }
         : ["http://localhost:3000", "http://127.0.0.1:3000"],
       methods: ["GET", "POST"],
-      credentials: true
+      credentials: true,
+      allowedHeaders: ["*"]
     },
     transports: ['websocket', 'polling'],
     pingTimeout: 120000,
     pingInterval: 30000,
     upgradeTimeout: 30000,
     allowEIO3: true,
-    maxHttpBufferSize: 1e8
+    maxHttpBufferSize: 1e8,
+    connectTimeout: 45000,
+    forceNew: true
   })
 
   // Import couples game handlers
@@ -100,6 +125,7 @@ app.prepare().then(() => {
     // Enhanced video calling system for 2-way calls only
     socket.on('join-video-room', ({ roomId, userId }) => {
       if (!roomId || !userId) {
+        console.error('Invalid room or user ID:', { roomId, userId })
         socket.emit('video-error', { message: 'Invalid room or user ID' })
         return
       }
@@ -113,12 +139,14 @@ app.prepare().then(() => {
           maxUsers: 2,
           isActive: false
         })
+        console.log(`Created new video room: ${roomId}`)
       }
       
       const room = videoRooms.get(roomId)
       
       // Check if room is full (only 2 users allowed)
       if (room.users.size >= room.maxUsers && !room.users.has(userId)) {
+        console.log(`Room ${roomId} is full, rejecting user ${userId}`)
         socket.emit('video-error', { message: 'Video call is full. Only 2 people can join.' })
         return
       }
@@ -129,6 +157,7 @@ app.prepare().then(() => {
           existingRoom.users.delete(userId)
           socket.leave(existingRoomId)
           socket.to(existingRoomId).emit('user-left-video', { userId, totalUsers: existingRoom.users.size })
+          console.log(`Removed user ${userId} from existing room ${existingRoomId}`)
         }
       }
       
@@ -144,27 +173,32 @@ app.prepare().then(() => {
       socket.to(roomId).emit('user-joined-video', { userId, totalUsers: room.users.size })
       
       // Send current room state to joining user
+      const otherUsers = Array.from(room.users.keys()).filter(id => id !== userId)
       socket.emit('video-room-joined', { 
         roomId, 
         userId, 
         totalUsers: room.users.size,
-        otherUsers: Array.from(room.users.keys()).filter(id => id !== userId)
+        otherUsers
       })
       
-      console.log(`User ${userId} joined video room: ${roomId}. Total users: ${room.users.size}`)
+      console.log(`User ${userId} joined video room: ${roomId}. Total users: ${room.users.size}, Other users: ${otherUsers.join(', ')}`)
     })
 
     socket.on('video-signal', ({ signal, roomId, userId, targetUserId }) => {
       if (!signal || !roomId || !userId) {
+        console.error('Invalid signal data:', { signal: !!signal, roomId, userId })
         socket.emit('video-error', { message: 'Invalid signal data' })
         return
       }
       
       const room = videoRooms.get(roomId)
       if (!room || !room.users.has(userId)) {
+        console.error(`User ${userId} not in video room ${roomId}`, { roomExists: !!room, userInRoom: room?.users.has(userId) })
         socket.emit('video-error', { message: 'User not in video room' })
         return
       }
+      
+      console.log(`Relaying ${signal.type || 'candidate'} signal from ${userId} in room ${roomId}`)
       
       // Update user's last activity
       const user = room.users.get(userId)
@@ -176,9 +210,13 @@ app.prepare().then(() => {
       if (targetUserId) {
         const targetUser = room.users.get(targetUserId)
         if (targetUser) {
+          console.log(`Sending signal to specific user ${targetUserId} at socket ${targetUser.socketId}`)
           io.to(targetUser.socketId).emit('video-signal', { signal, userId, roomId })
+        } else {
+          console.error(`Target user ${targetUserId} not found in room ${roomId}`)
         }
       } else {
+        console.log(`Broadcasting signal to room ${roomId} from ${userId}`)
         socket.to(roomId).emit('video-signal', { signal, userId, roomId })
       }
     })
@@ -311,6 +349,10 @@ app.prepare().then(() => {
         const roomCode = generateRoomCode()
         const playerName = data.playerName || `Player_${socket.id.substring(0, 6)}`
         
+        // Ensure socket joins the room FIRST
+        socket.join(roomCode)
+        console.log(`Socket ${socket.id} created and joined room ${roomCode}`)
+        
         const room = {
           id: roomCode,
           code: roomCode,
@@ -333,23 +375,31 @@ app.prepare().then(() => {
         }
         
         rooms.set(roomCode, room)
-        socket.join(roomCode)
+        
+        const roomData = {
+          id: room.id,
+          code: room.code,
+          host: { id: room.host.id },
+          players: room.players.map(p => ({ id: p.id, name: p.name })),
+          gameState: room.gameState,
+          currentGame: room.currentGame,
+          scores: { ...room.scores }
+        }
         
         socket.emit('room_created', {
           roomId: roomCode,
           roomCode: roomCode,
-          room: {
-            id: room.id,
-            code: room.code,
-            host: { id: room.host.id },
-            players: room.players.map(p => ({ id: p.id, name: p.name })),
-            gameState: room.gameState,
-            currentGame: room.currentGame,
-            scores: { ...room.scores }
-          }
+          room: roomData
         })
         
-        console.log('Room created:', roomCode, 'by', playerName)
+        // Confirm the host is connected
+        socket.emit('players-connected', {
+          totalPlayers: room.players.length,
+          players: room.players.map(p => ({ id: p.id, name: p.name })),
+          canStartGame: false // Need 2 players
+        })
+        
+        console.log(`Room ${roomCode} created by ${playerName}. Socket rooms:`, socket.rooms)
       } catch (error) {
         console.error('Error creating room:', error)
         socket.emit('error', { message: error.message })
@@ -363,16 +413,22 @@ app.prepare().then(() => {
         
         const room = rooms.get(data.roomCode)
         if (!room) {
+          console.log('Room not found:', data.roomCode)
           socket.emit('error', { message: 'Room not found' })
           return
         }
         
         if (room.guest) {
+          console.log('Room is full:', data.roomCode)
           socket.emit('error', { message: 'Room is full' })
           return
         }
         
         const playerName = data.playerName || `Player_${socket.id.substring(0, 6)}`
+        
+        // Ensure socket joins the room FIRST
+        socket.join(data.roomCode)
+        console.log(`Socket ${socket.id} joined room ${data.roomCode}`)
         
         room.guest = {
           id: playerName,
@@ -387,24 +443,7 @@ app.prepare().then(() => {
         
         room.scores[playerName] = 0
         
-        socket.join(data.roomCode)
-        
-        socket.emit('room_joined', {
-          roomId: data.roomCode,
-          roomCode: data.roomCode,
-          room: {
-            id: room.id,
-            code: room.code,
-            host: { id: room.host.id },
-            guest: room.guest ? { id: room.guest.id } : null,
-            players: room.players.map(p => ({ id: p.id, name: p.name })),
-            gameState: room.gameState,
-            currentGame: room.currentGame,
-            scores: { ...room.scores }
-          }
-        })
-        
-        io.to(data.roomCode).emit('room-update', {
+        const roomData = {
           id: room.id,
           code: room.code,
           host: { id: room.host.id },
@@ -413,9 +452,26 @@ app.prepare().then(() => {
           gameState: room.gameState,
           currentGame: room.currentGame,
           scores: { ...room.scores }
+        }
+        
+        // Send confirmation to the joining player
+        socket.emit('room_joined', {
+          roomId: data.roomCode,
+          roomCode: data.roomCode,
+          room: roomData
         })
         
-        console.log('Player', playerName, 'joined room:', data.roomCode)
+        // Notify all players in the room about the update
+        io.to(data.roomCode).emit('room-update', roomData)
+        
+        // Send a specific event to confirm both players are connected
+        io.to(data.roomCode).emit('players-connected', {
+          totalPlayers: room.players.length,
+          players: room.players.map(p => ({ id: p.id, name: p.name })),
+          canStartGame: room.players.length >= 2
+        })
+        
+        console.log(`Player ${playerName} joined room ${data.roomCode}. Total players: ${room.players.length}`)
       } catch (error) {
         console.error('Error joining room:', error)
         socket.emit('error', { message: error.message })
