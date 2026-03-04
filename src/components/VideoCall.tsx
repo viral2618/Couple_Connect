@@ -56,11 +56,17 @@ export default function VideoCall({
   const initializeMedia = useCallback(async () => {
     try {
       console.log('Initializing media for user:', userId)
+      
+      // Check if media devices are available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Media devices not supported')
+      }
+      
       const constraints = {
         video: {
-          width: { ideal: 1280, max: 1920 },
-          height: { ideal: 720, max: 1080 },
-          frameRate: { ideal: 30, max: 30 },
+          width: { ideal: 640, max: 1280 },
+          height: { ideal: 480, max: 720 },
+          frameRate: { ideal: 15, max: 30 },
           facingMode: 'user'
         },
         audio: {
@@ -73,10 +79,22 @@ export default function VideoCall({
       
       const mediaStream = await navigator.mediaDevices.getUserMedia(constraints)
       console.log('Media stream obtained:', mediaStream.getTracks().length, 'tracks')
+      
+      // Verify tracks are active
+      const videoTracks = mediaStream.getVideoTracks()
+      const audioTracks = mediaStream.getAudioTracks()
+      
+      if (videoTracks.length === 0 || audioTracks.length === 0) {
+        throw new Error('Required media tracks not available')
+      }
+      
       setStream(mediaStream)
       
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = mediaStream
+        localVideoRef.current.onloadedmetadata = () => {
+          localVideoRef.current?.play().catch(console.error)
+        }
       }
       
       setupAudioAnalysis(mediaStream)
@@ -84,6 +102,15 @@ export default function VideoCall({
     } catch (error: any) {
       console.error('Error accessing media devices:', error)
       setError(`Camera/Microphone access denied: ${error.message}`)
+      
+      // Try audio-only fallback
+      try {
+        const audioOnlyStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        setStream(audioOnlyStream)
+        console.log('Fallback to audio-only mode')
+      } catch (audioError) {
+        console.error('Audio-only fallback failed:', audioError)
+      }
     }
   }, [userId])
 
@@ -134,36 +161,74 @@ export default function VideoCall({
           { urls: 'stun:stun1.l.google.com:19302' },
           { urls: 'stun:stun2.l.google.com:19302' },
           { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' }
+          { urls: 'stun:stun4.l.google.com:19302' },
+          {
+            urls: 'turn:relay1.expressturn.com:3478',
+            username: 'ef3CQZAC2ZEQT3LJ',
+            credential: 'Zh6ysHKXJV8mxnLh'
+          }
         ],
-        iceCandidatePoolSize: 10
+        iceCandidatePoolSize: 10,
+        iceTransportPolicy: 'all',
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require'
+      },
+      offerOptions: {
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true
+      },
+      answerOptions: {
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true
       }
     })
+
+    let signalTimeout: NodeJS.Timeout
+    let connectionTimeout: NodeJS.Timeout
 
     newPeer.on('signal', (signal) => {
       console.log('Sending signal:', signal.type || 'candidate')
       targetSocket.emit('video-signal', { signal, roomId, userId })
+      
+      // Set timeout for signal response
+      if (signalTimeout) clearTimeout(signalTimeout)
+      signalTimeout = setTimeout(() => {
+        console.log('Signal timeout, attempting reconnection')
+        if (!newPeer.destroyed) {
+          newPeer.destroy()
+          setError('Connection timeout - please try again')
+        }
+      }, 15000)
     })
 
     newPeer.on('stream', (remoteStream) => {
       console.log('Received remote stream')
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStream
+        remoteVideoRef.current.onloadedmetadata = () => {
+          remoteVideoRef.current?.play().catch(console.error)
+        }
       }
       setIsConnected(true)
       setCallStats(prev => ({ ...prev, connectionState: 'connected' }))
+      if (signalTimeout) clearTimeout(signalTimeout)
+      if (connectionTimeout) clearTimeout(connectionTimeout)
     })
 
     newPeer.on('connect', () => {
       console.log('Peer connected successfully')
       setIsConnected(true)
       setCallStats(prev => ({ ...prev, connectionState: 'connected' }))
+      if (signalTimeout) clearTimeout(signalTimeout)
+      if (connectionTimeout) clearTimeout(connectionTimeout)
     })
 
     newPeer.on('close', () => {
       console.log('Peer connection closed')
       setIsConnected(false)
       setCallStats(prev => ({ ...prev, connectionState: 'disconnected' }))
+      if (signalTimeout) clearTimeout(signalTimeout)
+      if (connectionTimeout) clearTimeout(connectionTimeout)
     })
 
     newPeer.on('error', (err) => {
@@ -171,45 +236,83 @@ export default function VideoCall({
       setError(`Connection error: ${err.message}`)
       setCallStats(prev => ({ ...prev, connectionState: 'failed' }))
       
+      if (signalTimeout) clearTimeout(signalTimeout)
+      if (connectionTimeout) clearTimeout(connectionTimeout)
+      
       // Attempt reconnection after a delay
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
       }
       reconnectTimeoutRef.current = setTimeout(() => {
         console.log('Attempting to reconnect...')
-        if (stream && targetSocket.connected) {
+        if (stream && targetSocket.connected && !newPeer.destroyed) {
           const reconnectPeer = createPeer(initiator, stream, targetSocket)
           setPeer(reconnectPeer)
         }
       }, 3000)
     })
 
+    // Set overall connection timeout
+    connectionTimeout = setTimeout(() => {
+      if (!isConnected && !newPeer.destroyed) {
+        console.log('Connection timeout, destroying peer')
+        newPeer.destroy()
+        setError('Connection timeout - please check your internet connection')
+      }
+    }, 30000)
+
     return newPeer
-  }, [roomId, userId, peer, stream])
+  }, [roomId, userId, peer, stream, isConnected])
 
   useEffect(() => {
     if (!stream) return
     
     const newSocket = io(getSocketUrl(), {
       transports: ['websocket', 'polling'],
-      timeout: 20000,
+      timeout: 30000,
       forceNew: true,
       reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 10000,
+      maxReconnectionAttempts: 10,
+      randomizationFactor: 0.5,
+      upgrade: true,
+      rememberUpgrade: true
     })
     
     setSocket(newSocket)
     console.log(`Joining video room: ${roomId} as user: ${userId}`)
 
+    let joinRetryCount = 0
+    const maxJoinRetries = 3
+
+    const attemptJoin = () => {
+      if (newSocket.connected) {
+        console.log('Socket connected, joining video room')
+        newSocket.emit('join-video-room', { roomId, userId })
+      } else if (joinRetryCount < maxJoinRetries) {
+        joinRetryCount++
+        console.log(`Retrying join attempt ${joinRetryCount}/${maxJoinRetries}`)
+        setTimeout(attemptJoin, 2000)
+      }
+    }
+
     newSocket.on('connect', () => {
-      console.log('Socket connected, joining video room')
-      newSocket.emit('join-video-room', { roomId, userId })
+      console.log('Socket connected successfully')
+      joinRetryCount = 0
+      attemptJoin()
+    })
+
+    newSocket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error)
+      setError('Connection failed - please check your internet')
     })
 
     newSocket.on('video-room-joined', ({ otherUsers: users, totalUsers }) => {
       console.log(`Joined video room. Total users: ${totalUsers}, Other users:`, users)
       setOtherUsers(users)
+      setError(null)
       
       // If there's another user, become the initiator
       if (users.length > 0 && stream) {
@@ -244,7 +347,7 @@ export default function VideoCall({
               console.error('Error signaling new peer:', error)
             }
             return newPeer
-          } else if (currentPeer) {
+          } else if (currentPeer && !currentPeer.destroyed) {
             console.log('Signaling existing peer')
             try {
               currentPeer.signal(signal)
@@ -264,7 +367,7 @@ export default function VideoCall({
         setIsConnected(false)
         setOtherUsers(prev => prev.filter(id => id !== leftUserId))
         setPeer(currentPeer => {
-          if (currentPeer) {
+          if (currentPeer && !currentPeer.destroyed) {
             currentPeer.destroy()
           }
           return null
@@ -278,14 +381,22 @@ export default function VideoCall({
       setError(message)
     })
 
-    newSocket.on('disconnect', () => {
-      console.log('Socket disconnected')
+    newSocket.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason)
       setCallStats(prev => ({ ...prev, connectionState: 'disconnected' }))
+      if (reason === 'io server disconnect') {
+        // Server disconnected, try to reconnect
+        newSocket.connect()
+      }
     })
 
-    newSocket.on('reconnect', () => {
-      console.log('Socket reconnected')
-      newSocket.emit('join-video-room', { roomId, userId })
+    newSocket.on('reconnect', (attemptNumber) => {
+      console.log('Socket reconnected after', attemptNumber, 'attempts')
+      attemptJoin()
+    })
+
+    newSocket.on('reconnect_error', (error) => {
+      console.error('Reconnection error:', error)
     })
 
     return () => {
@@ -294,7 +405,7 @@ export default function VideoCall({
         clearTimeout(reconnectTimeoutRef.current)
       }
       setPeer(currentPeer => {
-        if (currentPeer) {
+        if (currentPeer && !currentPeer.destroyed) {
           currentPeer.destroy()
         }
         return null

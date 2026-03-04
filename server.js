@@ -81,8 +81,11 @@ app.prepare().then(() => {
       credentials: true
     },
     transports: ['websocket', 'polling'],
-    pingTimeout: 60000,
-    pingInterval: 25000
+    pingTimeout: 120000,
+    pingInterval: 30000,
+    upgradeTimeout: 30000,
+    allowEIO3: true,
+    maxHttpBufferSize: 1e8
   })
 
   // Import couples game handlers
@@ -120,8 +123,21 @@ app.prepare().then(() => {
         return
       }
       
+      // Remove user from any existing rooms first
+      for (const [existingRoomId, existingRoom] of videoRooms.entries()) {
+        if (existingRoom.users.has(userId) && existingRoomId !== roomId) {
+          existingRoom.users.delete(userId)
+          socket.leave(existingRoomId)
+          socket.to(existingRoomId).emit('user-left-video', { userId, totalUsers: existingRoom.users.size })
+        }
+      }
+      
       // Add user to room
-      room.users.set(userId, { socketId: socket.id, joinedAt: Date.now() })
+      room.users.set(userId, { 
+        socketId: socket.id, 
+        joinedAt: Date.now(),
+        lastPing: Date.now()
+      })
       socket.join(roomId)
       
       // Notify existing users about new user
@@ -148,6 +164,12 @@ app.prepare().then(() => {
       if (!room || !room.users.has(userId)) {
         socket.emit('video-error', { message: 'User not in video room' })
         return
+      }
+      
+      // Update user's last activity
+      const user = room.users.get(userId)
+      if (user) {
+        user.lastPing = Date.now()
       }
       
       // Send signal to specific user or broadcast to room
