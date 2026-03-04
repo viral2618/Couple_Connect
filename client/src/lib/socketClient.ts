@@ -5,12 +5,24 @@ let socket: Socket | null = null
 export const getSocket = (): Socket => {
   if (!socket) {
     const serverUrl = process.env.NODE_ENV === 'production' 
-      ? process.env.NEXT_PUBLIC_SERVER_URL || window.location.origin
+      ? process.env.NEXT_PUBLIC_SOCKET_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin
       : 'http://localhost:3000'
+    
+    console.log('Connecting to socket server:', serverUrl)
     
     socket = io(serverUrl, {
       transports: ['websocket', 'polling'],
       autoConnect: true,
+      timeout: 20000,
+      forceNew: false
+    })
+    
+    socket.on('connect', () => {
+      console.log('Socket connected successfully to:', serverUrl)
+    })
+    
+    socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error)
     })
   }
   return socket

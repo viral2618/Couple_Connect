@@ -75,7 +75,7 @@ app.prepare().then(() => {
   const io = new Server(server, {
     cors: {
       origin: process.env.NODE_ENV === 'production' 
-        ? [process.env.NEXT_PUBLIC_APP_URL, "https://couple-connect.vercel.app", "https://*.vercel.app"]
+        ? [process.env.NEXT_PUBLIC_APP_URL, "https://coupleconnect-production-35ae.up.railway.app", "https://*.up.railway.app", "https://couple-connect.vercel.app", "https://*.vercel.app"]
         : ["http://localhost:3000", "http://127.0.0.1:3000"],
       methods: ["GET", "POST"],
       credentials: true

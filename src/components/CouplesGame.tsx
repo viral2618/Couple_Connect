@@ -41,9 +41,13 @@ export default function CouplesGame({ userId, userName }: CouplesGameProps) {
   const [currentGameData, setCurrentGameData] = useState<any>(null)
 
   useEffect(() => {
-    const newSocket = io(process.env.NODE_ENV === 'production' 
-      ? process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin
-      : 'http://localhost:3000', {
+    const socketUrl = process.env.NODE_ENV === 'production' 
+      ? process.env.NEXT_PUBLIC_SOCKET_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin
+      : 'http://localhost:3000'
+    
+    console.log('Connecting to socket server:', socketUrl)
+    
+    const newSocket = io(socketUrl, {
       transports: ['websocket', 'polling'],
       timeout: 20000,
       forceNew: true
@@ -52,10 +56,15 @@ export default function CouplesGame({ userId, userName }: CouplesGameProps) {
 
     newSocket.on('connect', () => {
       console.log('Connected to game server with ID:', newSocket.id)
+      console.log('Socket URL:', socketUrl)
     })
 
     newSocket.on('disconnect', () => {
       console.log('Disconnected from game server')
+    })
+    
+    newSocket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error)
     })
 
     newSocket.on('room_created', (data) => {
