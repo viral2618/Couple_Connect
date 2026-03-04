@@ -275,7 +275,6 @@ export default function VideoCall({
       reconnectionAttempts: 10,
       reconnectionDelay: 2000,
       reconnectionDelayMax: 10000,
-      maxReconnectionAttempts: 10,
       randomizationFactor: 0.5,
       upgrade: true,
       rememberUpgrade: true
