@@ -11,6 +11,10 @@ call npm install
 cd ..
 
 echo.
+echo Generating Prisma Client...
+call npx prisma generate
+
+echo.
 echo Building client...
 cd client
 call npm run build

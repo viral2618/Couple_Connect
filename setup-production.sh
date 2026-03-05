@@ -39,6 +39,11 @@ git clone https://github.com/YOUR_USERNAME/couple-connect.git .
 echo "⚙️ Setting up environment..."
 cp .env.production .env
 
+# Install dependencies and generate Prisma client
+echo "📦 Installing dependencies and generating Prisma client..."
+npm install
+npx prisma generate
+
 echo "🔐 Please update the following in your .env file:"
 echo "- DATABASE_URL (your MongoDB connection string)"
 echo "- JWT_SECRET (generate a secure secret)"
