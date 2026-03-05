@@ -34,12 +34,19 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
 
   const initializeCall = async () => {
     try {
+      console.log('[VideoCall] Initializing call for room:', roomId)
+      
       // Connect to socket
       socketRef.current = io(window.location.origin, { path: '/socket.io/' })
 
       socketRef.current.on('connect', async () => {
-        console.log('Socket connected')
-        await joinRoom()
+        console.log('[VideoCall] Socket connected:', socketRef.current?.id)
+        try {
+          await joinRoom()
+        } catch (err: any) {
+          console.error('[VideoCall] Failed to join room:', err)
+          setError('Failed to join video room: ' + err.message)
+        }
       })
 
       socketRef.current.on('newProducer', async ({ producerId, peerId, kind }) => {
@@ -64,27 +71,41 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
 
   const joinRoom = async () => {
     try {
+      console.log('[VideoCall] Requesting router RTP capabilities for room:', roomId)
+      
       // Get router RTP capabilities
-      const { rtpCapabilities } = await emitAsync('getRouterRtpCapabilities', { roomId })
+      const response = await emitAsync('getRouterRtpCapabilities', { roomId })
+      
+      console.log('[VideoCall] Received response:', response)
+      
+      if (!response || !response.rtpCapabilities) {
+        throw new Error('MediaSoup server not available. Please ensure the server is running with MediaSoup enabled.')
+      }
 
+      console.log('[VideoCall] Creating MediaSoup device...')
       // Create device
       deviceRef.current = new Device()
-      await deviceRef.current.load({ routerRtpCapabilities: rtpCapabilities })
+      await deviceRef.current.load({ routerRtpCapabilities: response.rtpCapabilities })
+      console.log('[VideoCall] Device loaded successfully')
 
+      console.log('[VideoCall] Creating transports...')
       // Create transports
       await createTransports()
 
+      console.log('[VideoCall] Requesting user media...')
       // Get user media
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 1280, height: 720 },
         audio: true
       })
 
+      console.log('[VideoCall] Got user media, tracks:', stream.getTracks().length)
       localStreamRef.current = stream
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream
       }
 
+      console.log('[VideoCall] Producing media...')
       // Produce media
       const videoTrack = stream.getVideoTracks()[0]
       const audioTrack = stream.getAudioTracks()[0]
@@ -92,14 +113,20 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
       if (videoTrack) await produceMedia(videoTrack, 'video')
       if (audioTrack) await produceMedia(audioTrack, 'audio')
 
+      console.log('[VideoCall] Getting existing producers...')
       // Get existing producers
-      const { producers } = await emitAsync('getProducers', { roomId })
-      for (const { producerId, kind } of producers) {
-        await consumeMedia(producerId, kind)
+      const producersResponse = await emitAsync('getProducers', { roomId })
+      if (producersResponse && producersResponse.producers) {
+        console.log('[VideoCall] Found', producersResponse.producers.length, 'existing producers')
+        for (const { producerId, kind } of producersResponse.producers) {
+          await consumeMedia(producerId, kind)
+        }
       }
 
+      console.log('[VideoCall] Call initialized successfully')
       setIsConnected(true)
     } catch (err: any) {
+      console.error('[VideoCall] Error in joinRoom:', err)
       setError(err.message)
     }
   }

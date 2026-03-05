@@ -63,8 +63,13 @@ process.on('SIGINT', () => {
 
 app.prepare().then(async () => {
   // Initialize MediaSoup workers
-  await initializeWorkers()
-  console.log('MediaSoup workers initialized')
+  try {
+    await initializeWorkers()
+    console.log('✓ MediaSoup workers initialized successfully')
+  } catch (error) {
+    console.error('✗ Failed to initialize MediaSoup workers:', error)
+    console.log('Video calling will not be available')
+  }
   const server = createServer(async (req, res) => {
     try {
       const parsedUrl = parse(req.url, true)

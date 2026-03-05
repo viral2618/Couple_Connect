@@ -36,13 +36,25 @@ async function createWorker() {
 }
 
 async function initializeWorkers() {
-  const numWorkers = Object.keys(require('os').cpus()).length
-  for (let i = 0; i < numWorkers; i++) {
-    workers.push(await createWorker())
+  try {
+    const numWorkers = Math.max(1, Object.keys(require('os').cpus()).length)
+    console.log(`Initializing ${numWorkers} MediaSoup workers...`)
+    for (let i = 0; i < numWorkers; i++) {
+      const worker = await createWorker()
+      workers.push(worker)
+      console.log(`MediaSoup worker ${i + 1}/${numWorkers} created [pid:${worker.pid}]`)
+    }
+    console.log(`All ${numWorkers} MediaSoup workers initialized successfully`)
+  } catch (error) {
+    console.error('Failed to initialize MediaSoup workers:', error)
+    throw error
   }
 }
 
 function getNextWorker() {
+  if (workers.length === 0) {
+    throw new Error('No MediaSoup workers available')
+  }
   const worker = workers[nextWorkerIdx]
   nextWorkerIdx = (nextWorkerIdx + 1) % workers.length
   return worker
@@ -70,9 +82,12 @@ async function createRoom(roomId) {
 function setupMediasoupHandlers(io, socket) {
   socket.on('getRouterRtpCapabilities', async ({ roomId }, callback) => {
     try {
+      console.log(`[MediaSoup] Getting RTP capabilities for room: ${roomId}`)
       const room = await createRoom(roomId)
+      console.log(`[MediaSoup] Room created/retrieved: ${roomId}`)
       callback({ rtpCapabilities: room.router.rtpCapabilities })
     } catch (error) {
+      console.error(`[MediaSoup] Error getting RTP capabilities:`, error)
       callback({ error: error.message })
     }
   })
