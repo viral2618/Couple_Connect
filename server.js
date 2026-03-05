@@ -63,12 +63,14 @@ process.on('SIGINT', () => {
 
 app.prepare().then(async () => {
   // Initialize MediaSoup workers
+  let mediasoupAvailable = false
   try {
     await initializeWorkers()
+    mediasoupAvailable = true
     console.log('✓ MediaSoup workers initialized successfully')
   } catch (error) {
-    console.error('✗ Failed to initialize MediaSoup workers:', error)
-    console.log('Video calling will not be available')
+    console.error('✗ Failed to initialize MediaSoup workers:', error.message)
+    console.log('⚠ Video calling will not be available. App will continue without it.')
   }
   const server = createServer(async (req, res) => {
     try {
@@ -129,8 +131,10 @@ app.prepare().then(async () => {
   io.on('connection', (socket) => {
     console.log('User connected:', socket.id)
 
-    // Setup MediaSoup handlers for video calling
-    setupMediasoupHandlers(io, socket)
+    // Setup MediaSoup handlers for video calling (only if available)
+    if (mediasoupAvailable) {
+      setupMediasoupHandlers(io, socket)
+    }
 
     // Setup couples game handlers for this socket
     setupCouplesGameHandlers(io, socket, rooms)
