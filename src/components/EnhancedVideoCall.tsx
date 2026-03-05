@@ -4,17 +4,20 @@ import { useEffect, useRef, useState } from 'react'
 import { Device } from 'mediasoup-client'
 import { io, Socket } from 'socket.io-client'
 
-interface VideoCallProps {
+interface EnhancedVideoCallProps {
   roomId: string
   userId: string
   onClose: () => void
 }
 
-export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
+export default function EnhancedVideoCall({ roomId, userId, onClose }: EnhancedVideoCallProps) {
   const [isConnected, setIsConnected] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [isVideoOff, setIsVideoOff] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isPiP, setIsPiP] = useState(false)
+  const [callDuration, setCallDuration] = useState(0)
+  const [connectionQuality, setConnectionQuality] = useState<'excellent' | 'good' | 'poor'>('excellent')
 
   const socketRef = useRef<Socket | null>(null)
   const deviceRef = useRef<Device | null>(null)
@@ -25,11 +28,16 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
   const recvTransportRef = useRef<any>(null)
   const producersRef = useRef<Map<string, any>>(new Map())
   const consumersRef = useRef<Map<string, any>>(new Map())
+  const callStartTimeRef = useRef<number>(Date.now())
 
   useEffect(() => {
     initializeCall()
+    const timer = setInterval(() => {
+      setCallDuration(Math.floor((Date.now() - callStartTimeRef.current) / 1000))
+    }, 1000)
     return () => {
       cleanup()
+      clearInterval(timer)
     }
   }, [])
 
@@ -44,22 +52,15 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
       })
 
       socketRef.current.on('connect', async () => {
-        console.log('[VideoCall] Socket connected:', socketRef.current?.id)
-        console.log('[VideoCall] Joining room:', roomId)
-        
-        // CRITICAL: Join the socket room first
         socketRef.current?.emit('join-video-room', { roomId, userId })
-        
         try {
           await joinRoom()
         } catch (err: any) {
-          console.error('[VideoCall] Join error:', err)
           setError('Failed to join: ' + err.message)
         }
       })
 
       socketRef.current.on('newProducer', async ({ producerId, kind }) => {
-        console.log('[VideoCall] New producer:', kind)
         try {
           await consumeMedia(producerId, kind)
         } catch (err) {
@@ -75,6 +76,7 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
 
       socketRef.current.on('connect_error', (err) => {
         setError('Connection error: ' + err.message)
+        setConnectionQuality('poor')
       })
     } catch (err: any) {
       setError(err.message)
@@ -83,14 +85,11 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
 
   const joinRoom = async () => {
     try {
-      console.log('[VideoCall] Getting RTP capabilities for room:', roomId)
       const response = await emitAsync('getRouterRtpCapabilities', { roomId })
       
       if (!response?.rtpCapabilities) {
-        throw new Error('Video calling service is not available on this server. Please contact support.')
+        throw new Error('Video calling service is not available')
       }
-      
-      console.log('[VideoCall] RTP capabilities received')
 
       deviceRef.current = new Device()
       await deviceRef.current.load({ routerRtpCapabilities: response.rtpCapabilities })
@@ -98,16 +97,8 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
       await createTransports()
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-          frameRate: { ideal: 24, max: 30 }
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
       })
 
       localStreamRef.current = stream
@@ -129,27 +120,19 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
       }
 
       setIsConnected(true)
+      setConnectionQuality('excellent')
     } catch (err: any) {
-      console.error('[VideoCall] Join error:', err)
       setError(err.message)
     }
   }
 
   const createTransports = async () => {
-    const sendTransportData = await emitAsync('createWebRtcTransport', {
-      roomId,
-      direction: 'send'
-    })
-
+    const sendTransportData = await emitAsync('createWebRtcTransport', { roomId, direction: 'send' })
     sendTransportRef.current = deviceRef.current!.createSendTransport(sendTransportData)
 
     sendTransportRef.current.on('connect', async ({ dtlsParameters }: any, callback: any, errback: any) => {
       try {
-        await emitAsync('connectWebRtcTransport', {
-          roomId,
-          transportId: sendTransportRef.current.id,
-          dtlsParameters
-        })
+        await emitAsync('connectWebRtcTransport', { roomId, transportId: sendTransportRef.current.id, dtlsParameters })
         callback()
       } catch (err) {
         errback(err)
@@ -158,12 +141,7 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
 
     sendTransportRef.current.on('produce', async ({ kind, rtpParameters }: any, callback: any, errback: any) => {
       try {
-        const { id } = await emitAsync('produce', {
-          roomId,
-          transportId: sendTransportRef.current.id,
-          kind,
-          rtpParameters
-        })
+        const { id } = await emitAsync('produce', { roomId, transportId: sendTransportRef.current.id, kind, rtpParameters })
         callback({ id })
       } catch (err) {
         errback(err)
@@ -171,115 +149,68 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
     })
 
     sendTransportRef.current.on('connectionstatechange', (state: string) => {
-      console.log('[Send Transport] State:', state)
       if (state === 'failed' || state === 'closed') {
         setError('Connection failed')
+        setConnectionQuality('poor')
+      } else if (state === 'connected') {
+        setConnectionQuality('excellent')
       }
     })
 
-    const recvTransportData = await emitAsync('createWebRtcTransport', {
-      roomId,
-      direction: 'recv'
-    })
-
+    const recvTransportData = await emitAsync('createWebRtcTransport', { roomId, direction: 'recv' })
     recvTransportRef.current = deviceRef.current!.createRecvTransport(recvTransportData)
 
     recvTransportRef.current.on('connect', async ({ dtlsParameters }: any, callback: any, errback: any) => {
       try {
-        await emitAsync('connectWebRtcTransport', {
-          roomId,
-          transportId: recvTransportRef.current.id,
-          dtlsParameters
-        })
+        await emitAsync('connectWebRtcTransport', { roomId, transportId: recvTransportRef.current.id, dtlsParameters })
         callback()
       } catch (err) {
         errback(err)
       }
     })
-
-    recvTransportRef.current.on('connectionstatechange', (state: string) => {
-      console.log('[Recv Transport] State:', state)
-      if (state === 'failed' || state === 'closed') {
-        setError('Connection failed')
-      }
-    })
   }
 
   const produceMedia = async (track: MediaStreamTrack, kind: 'audio' | 'video') => {
-    try {
-      const producer = await sendTransportRef.current.produce({ track })
-      producersRef.current.set(kind, producer)
-      
-      producer.on('transportclose', () => {
-        console.log(`[${kind}] Producer transport closed`)
-      })
-      
-      producer.on('trackended', () => {
-        console.log(`[${kind}] Track ended`)
-      })
-    } catch (err) {
-      console.error(`Failed to produce ${kind}:`, err)
-      throw err
-    }
+    const producer = await sendTransportRef.current.produce({ track })
+    producersRef.current.set(kind, producer)
   }
 
   const consumeMedia = async (producerId: string, kind: string) => {
-    try {
-      const { id, rtpParameters } = await emitAsync('consume', {
-        roomId,
-        transportId: recvTransportRef.current.id,
-        producerId,
-        rtpCapabilities: deviceRef.current!.rtpCapabilities
-      })
+    const { id, rtpParameters } = await emitAsync('consume', {
+      roomId,
+      transportId: recvTransportRef.current.id,
+      producerId,
+      rtpCapabilities: deviceRef.current!.rtpCapabilities
+    })
 
-      const consumer = await recvTransportRef.current.consume({
-        id,
-        producerId,
-        kind,
-        rtpParameters
-      })
+    const consumer = await recvTransportRef.current.consume({ id, producerId, kind, rtpParameters })
+    consumersRef.current.set(id, consumer)
 
-      consumersRef.current.set(id, consumer)
-
-      const stream = new MediaStream([consumer.track])
-      
-      if (remoteVideoRef.current) {
-        if (kind === 'video') {
+    const stream = new MediaStream([consumer.track])
+    
+    if (remoteVideoRef.current) {
+      if (kind === 'video') {
+        remoteVideoRef.current.srcObject = stream
+      } else if (kind === 'audio') {
+        const existingStream = remoteVideoRef.current.srcObject as MediaStream
+        if (existingStream) {
+          existingStream.addTrack(consumer.track)
+        } else {
           remoteVideoRef.current.srcObject = stream
-        } else if (kind === 'audio') {
-          const existingStream = remoteVideoRef.current.srcObject as MediaStream
-          if (existingStream) {
-            existingStream.addTrack(consumer.track)
-          } else {
-            remoteVideoRef.current.srcObject = stream
-          }
         }
       }
-
-      consumer.resume()
-    } catch (err) {
-      console.error('Consume error:', err)
-      throw err
     }
+
+    consumer.resume()
   }
 
   const emitAsync = (event: string, data: any): Promise<any> => {
     return new Promise((resolve, reject) => {
-      if (!socketRef.current) {
-        return reject(new Error('Socket not connected'))
-      }
-      
-      const timeout = setTimeout(() => {
-        reject(new Error('Request timeout'))
-      }, 10000)
-      
+      if (!socketRef.current) return reject(new Error('Socket not connected'))
+      const timeout = setTimeout(() => reject(new Error('Request timeout')), 10000)
       socketRef.current.emit(event, data, (response: any) => {
         clearTimeout(timeout)
-        if (response?.error) {
-          reject(new Error(response.error))
-        } else {
-          resolve(response)
-        }
+        response?.error ? reject(new Error(response.error)) : resolve(response)
       })
     })
   }
@@ -287,11 +218,7 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
   const toggleMute = () => {
     const audioProducer = producersRef.current.get('audio')
     if (audioProducer) {
-      if (isMuted) {
-        audioProducer.resume()
-      } else {
-        audioProducer.pause()
-      }
+      isMuted ? audioProducer.resume() : audioProducer.pause()
       setIsMuted(!isMuted)
     }
   }
@@ -299,53 +226,29 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
   const toggleVideo = () => {
     const videoProducer = producersRef.current.get('video')
     if (videoProducer) {
-      if (isVideoOff) {
-        videoProducer.resume()
-      } else {
-        videoProducer.pause()
-      }
+      isVideoOff ? videoProducer.resume() : videoProducer.pause()
       setIsVideoOff(!isVideoOff)
     }
   }
 
+  const togglePiP = () => setIsPiP(!isPiP)
+
   const cleanup = () => {
-    try {
-      console.log('[VideoCall] Cleaning up...')
-      localStreamRef.current?.getTracks().forEach(track => track.stop())
-      producersRef.current.forEach(producer => producer.close())
-      consumersRef.current.forEach(consumer => consumer.close())
-      sendTransportRef.current?.close()
-      recvTransportRef.current?.close()
-      
-      // Leave the room before disconnecting
-      if (socketRef.current?.connected) {
-        socketRef.current.emit('leave-video-room', { roomId, userId })
-      }
-      
-      socketRef.current?.disconnect()
-      console.log('[VideoCall] Cleanup complete')
-    } catch (err) {
-      console.error('Cleanup error:', err)
+    localStreamRef.current?.getTracks().forEach(track => track.stop())
+    producersRef.current.forEach(producer => producer.close())
+    consumersRef.current.forEach(consumer => consumer.close())
+    sendTransportRef.current?.close()
+    recvTransportRef.current?.close()
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('leave-video-room', { roomId, userId })
     }
+    socketRef.current?.disconnect()
   }
 
   const handleEndCall = () => {
     cleanup()
     onClose()
   }
-
-  const [isPiP, setIsPiP] = useState(false)
-  const [callDuration, setCallDuration] = useState(0)
-  const callStartTimeRef = useRef<number>(Date.now())
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCallDuration(Math.floor((Date.now() - callStartTimeRef.current) / 1000))
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [])
-
-  const togglePiP = () => setIsPiP(!isPiP)
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -360,7 +263,8 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-4">
             <div className={`w-3 h-3 rounded-full animate-pulse ${
-              isConnected ? 'bg-green-500' : 'bg-yellow-500'
+              connectionQuality === 'excellent' ? 'bg-green-500' : 
+              connectionQuality === 'good' ? 'bg-yellow-500' : 'bg-red-500'
             }`} />
             <span className="text-white font-medium">{formatDuration(callDuration)}</span>
           </div>
