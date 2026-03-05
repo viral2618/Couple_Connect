@@ -13,7 +13,38 @@ const mediaCodecs = [
   {
     kind: 'video',
     mimeType: 'video/VP8',
-    clockRate: 90000
+    clockRate: 90000,
+    parameters: {
+      'x-google-start-bitrate': 1000
+    }
+  },
+  {
+    kind: 'video',
+    mimeType: 'video/VP9',
+    clockRate: 90000,
+    parameters: {
+      'profile-id': 2
+    }
+  },
+  {
+    kind: 'video',
+    mimeType: 'video/h264',
+    clockRate: 90000,
+    parameters: {
+      'packetization-mode': 1,
+      'profile-level-id': '4d0032',
+      'level-asymmetry-allowed': 1
+    }
+  },
+  {
+    kind: 'video',
+    mimeType: 'video/h264',
+    clockRate: 90000,
+    parameters: {
+      'packetization-mode': 1,
+      'profile-level-id': '42e01f',
+      'level-asymmetry-allowed': 1
+    }
   }
 ]
 
@@ -34,7 +65,7 @@ async function createWorker() {
 
 async function initializeWorkers() {
   try {
-    const numWorkers = Math.max(1, Object.keys(require('os').cpus()).length)
+    const numWorkers = 1
     console.log(`Initializing ${numWorkers} MediaSoup workers...`)
     for (let i = 0; i < numWorkers; i++) {
       const worker = await createWorker()
@@ -94,15 +125,22 @@ function setupMediasoupHandlers(io, socket) {
       const room = rooms.get(roomId)
       if (!room) throw new Error('Room not found')
 
-      const transport = await room.router.createWebRtcTransport({
-        listenIps: [{ 
-          ip: '0.0.0.0', 
-          announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP 
-        }],
+      const webRtcTransportOptions = {
+        listenIps: [
+          {
+            ip: '0.0.0.0',
+            announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || undefined
+          }
+        ],
         enableUdp: true,
         enableTcp: true,
-        preferUdp: true
-      })
+        preferUdp: true,
+        initialAvailableOutgoingBitrate: 1000000,
+        minimumAvailableOutgoingBitrate: 600000,
+        maxSctpMessageSize: 262144
+      }
+
+      const transport = await room.router.createWebRtcTransport(webRtcTransportOptions)
 
       if (!room.peers.has(socket.id)) {
         room.peers.set(socket.id, { transports: new Map(), producers: new Map(), consumers: new Map() })
@@ -117,6 +155,7 @@ function setupMediasoupHandlers(io, socket) {
         dtlsParameters: transport.dtlsParameters
       })
     } catch (error) {
+      console.error('[MediaSoup] Error creating transport:', error)
       callback({ error: error.message })
     }
   })
@@ -132,6 +171,7 @@ function setupMediasoupHandlers(io, socket) {
       await transport.connect({ dtlsParameters })
       callback({ success: true })
     } catch (error) {
+      console.error('[MediaSoup] Error connecting transport:', error)
       callback({ error: error.message })
     }
   })
@@ -147,11 +187,11 @@ function setupMediasoupHandlers(io, socket) {
       const producer = await transport.produce({ kind, rtpParameters })
       peer.producers.set(producer.id, producer)
 
-      // Notify other peers
       socket.to(roomId).emit('newProducer', { producerId: producer.id, peerId: socket.id, kind })
 
       callback({ id: producer.id })
     } catch (error) {
+      console.error('[MediaSoup] Error producing:', error)
       callback({ error: error.message })
     }
   })
@@ -165,13 +205,14 @@ function setupMediasoupHandlers(io, socket) {
       if (!transport) throw new Error('Transport not found')
 
       if (!room.router.canConsume({ producerId, rtpCapabilities })) {
-        throw new Error('Cannot consume')
+        console.error('[MediaSoup] Cannot consume')
+        return callback({ error: 'Cannot consume' })
       }
 
       const consumer = await transport.consume({
         producerId,
         rtpCapabilities,
-        paused: true
+        paused: false
       })
 
       peer.consumers.set(consumer.id, consumer)
@@ -183,6 +224,7 @@ function setupMediasoupHandlers(io, socket) {
         rtpParameters: consumer.rtpParameters
       })
     } catch (error) {
+      console.error('[MediaSoup] Error consuming:', error)
       callback({ error: error.message })
     }
   })
@@ -198,6 +240,7 @@ function setupMediasoupHandlers(io, socket) {
       await consumer.resume()
       callback({ success: true })
     } catch (error) {
+      console.error('[MediaSoup] Error resuming consumer:', error)
       callback({ error: error.message })
     }
   })
@@ -218,6 +261,7 @@ function setupMediasoupHandlers(io, socket) {
 
       callback({ producers })
     } catch (error) {
+      console.error('[MediaSoup] Error getting producers:', error)
       callback({ error: error.message })
     }
   })
@@ -226,16 +270,13 @@ function setupMediasoupHandlers(io, socket) {
     for (const [roomId, room] of rooms.entries()) {
       const peer = room.peers.get(socket.id)
       if (peer) {
-        // Close all transports
         for (const transport of peer.transports.values()) {
           transport.close()
         }
         room.peers.delete(socket.id)
 
-        // Notify other peers
         socket.to(roomId).emit('peerClosed', { peerId: socket.id })
 
-        // Clean up empty rooms
         if (room.peers.size === 0) {
           room.router.close()
           rooms.delete(roomId)
