@@ -1,12 +1,21 @@
 # Couple Connect - Production Deployment Guide
 
-A Next.js application for couples with real-time chat, games, and video calling features.
+A Next.js application for couples with real-time chat, video calling, and games features.
 
 ## 🚀 Quick Start (Development)
 
 ```bash
 npm install
 npm run dev
+```
+
+## 📹 Video Calling Setup
+
+For video calling feature setup, see [VIDEO_CALLING_SETUP.md](VIDEO_CALLING_SETUP.md)
+
+```bash
+# Quick install
+npm install mediasoup@^3.13.0 mediasoup-client@^3.7.0
 ```
 
 ## 🏭 Production Deployment
@@ -49,6 +58,9 @@ MEILISEARCH_MASTER_KEY="your-meilisearch-master-key"
 
 # Domain
 NEXT_PUBLIC_APP_URL="https://your-domain.com"
+
+# Video Calling (Production only)
+MEDIASOUP_ANNOUNCED_IP="your-server-public-ip"
 ```
 
 ### 3. SSL Certificate
@@ -60,6 +72,11 @@ sudo certbot --nginx -d your-domain.com -d www.your-domain.com
 ### 4. Deploy
 
 ```bash
+# Open MediaSoup ports
+sudo ufw allow 10000:10100/udp
+sudo ufw allow 10000:10100/tcp
+
+# Start services
 docker-compose -f docker-compose.prod.yml up -d
 ```
 
@@ -104,6 +121,7 @@ node check-db.js
 - Session management
 - Input validation
 - CORS protection
+- End-to-end encrypted video calls (DTLS-SRTP)
 
 ## 🏗️ Architecture
 
@@ -114,8 +132,13 @@ node check-db.js
 └─────────────────┘    └─────────────────┘    └─────────────────┘
          │                       │                       │
          │              ┌─────────────────┐              │
-         └──────────────│   MeiliSearch   │──────────────┘
-                        │   (Docker)      │
+         │──────────────│   MeiliSearch   │──────────────┤
+         │              │   (Docker)      │              │
+         │              └─────────────────┘              │
+         │                                               │
+         │              ┌─────────────────┐              │
+         └──────────────│   MediaSoup     │──────────────┘
+                        │  (Video SFU)    │
                         └─────────────────┘
 ```
 

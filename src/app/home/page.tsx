@@ -295,24 +295,6 @@ export default function HomePage() {
                 <p className="text-gray-600 text-lg leading-relaxed">Send messages instantly and stay connected throughout the day</p>
               </div>
             </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, x: 50 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.8, delay: 0.1 }}
-              className="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-purple-50 to-pink-50 p-8 border border-purple-200/50 hover:shadow-2xl transition-all duration-500"
-            >
-              <div className="absolute top-0 left-0 w-32 h-32 bg-gradient-to-br from-purple-200/30 to-pink-200/30 rounded-full -translate-y-16 -translate-x-16 group-hover:scale-150 transition-transform duration-700"></div>
-              <div className="relative z-10">
-                <div className="flex items-center space-x-4 mb-6">
-                  <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center text-2xl shadow-lg">
-                    📹
-                  </div>
-                  <h3 className="text-2xl font-bold text-gray-800">Video Calls</h3>
-                </div>
-                <p className="text-gray-600 text-lg leading-relaxed">Face-to-face conversations to bridge the distance</p>
-              </div>
-            </motion.div>
           </div>
         </div>
       </main>

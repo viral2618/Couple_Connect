@@ -3,6 +3,7 @@ const { parse } = require('url')
 const next = require('next')
 const { Server } = require('socket.io')
 const { PrismaClient } = require('@prisma/client')
+const { initializeWorkers, setupMediasoupHandlers } = require('./mediasoup-server')
 
 const prisma = new PrismaClient({
   errorFormat: 'pretty',
@@ -60,7 +61,10 @@ process.on('SIGINT', () => {
   process.exit(0)
 })
 
-app.prepare().then(() => {
+app.prepare().then(async () => {
+  // Initialize MediaSoup workers
+  await initializeWorkers()
+  console.log('MediaSoup workers initialized')
   const server = createServer(async (req, res) => {
     try {
       const parsedUrl = parse(req.url, true)
@@ -96,6 +100,7 @@ app.prepare().then(() => {
               return false
             })
             
+            console.log(`CORS check - Origin: ${origin}, Allowed: ${isAllowed}`)
             callback(null, isAllowed)
           }
         : ["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -103,14 +108,14 @@ app.prepare().then(() => {
       credentials: true,
       allowedHeaders: ["*"]
     },
-    transports: ['websocket', 'polling'],
-    pingTimeout: 120000,
-    pingInterval: 30000,
+    path: '/socket.io/',
+    transports: ['polling', 'websocket'],
+    pingTimeout: 60000,
+    pingInterval: 25000,
     upgradeTimeout: 30000,
     allowEIO3: true,
     maxHttpBufferSize: 1e8,
-    connectTimeout: 45000,
-    forceNew: true
+    connectTimeout: 45000
   })
 
   // Import couples game handlers
@@ -118,6 +123,9 @@ app.prepare().then(() => {
   
   io.on('connection', (socket) => {
     console.log('User connected:', socket.id)
+
+    // Setup MediaSoup handlers for video calling
+    setupMediasoupHandlers(io, socket)
 
     // Setup couples game handlers for this socket
     setupCouplesGameHandlers(io, socket, rooms)
@@ -344,14 +352,16 @@ app.prepare().then(() => {
     // Handle room creation
     socket.on('create_room', (data) => {
       try {
-        console.log('Create room request:', data)
+        console.log('[CREATE_ROOM] Request received:', data)
+        console.log('[CREATE_ROOM] Socket ID:', socket.id)
+        console.log('[CREATE_ROOM] Socket connected:', socket.connected)
         
         const roomCode = generateRoomCode()
         const playerName = data.playerName || `Player_${socket.id.substring(0, 6)}`
         
         // Ensure socket joins the room FIRST
         socket.join(roomCode)
-        console.log(`Socket ${socket.id} created and joined room ${roomCode}`)
+        console.log(`[CREATE_ROOM] Socket ${socket.id} created and joined room ${roomCode}`)
         
         const room = {
           id: roomCode,
@@ -375,6 +385,7 @@ app.prepare().then(() => {
         }
         
         rooms.set(roomCode, room)
+        console.log(`[CREATE_ROOM] Room stored in memory. Total rooms: ${rooms.size}`)
         
         const roomData = {
           id: room.id,
@@ -391,6 +402,7 @@ app.prepare().then(() => {
           roomCode: roomCode,
           room: roomData
         })
+        console.log(`[CREATE_ROOM] Emitted room_created event to socket ${socket.id}`)
         
         // Confirm the host is connected
         socket.emit('players-connected', {
@@ -399,9 +411,9 @@ app.prepare().then(() => {
           canStartGame: false // Need 2 players
         })
         
-        console.log(`Room ${roomCode} created by ${playerName}. Socket rooms:`, socket.rooms)
+        console.log(`[CREATE_ROOM] SUCCESS - Room ${roomCode} created by ${playerName}`)
       } catch (error) {
-        console.error('Error creating room:', error)
+        console.error('[CREATE_ROOM] ERROR:', error)
         socket.emit('error', { message: error.message })
       }
     })
@@ -409,17 +421,19 @@ app.prepare().then(() => {
     // Handle room joining
     socket.on('join_room', (data) => {
       try {
-        console.log('Join room request:', data)
+        console.log('[JOIN_ROOM] Request received:', data)
+        console.log('[JOIN_ROOM] Socket ID:', socket.id)
+        console.log('[JOIN_ROOM] Available rooms:', Array.from(rooms.keys()))
         
         const room = rooms.get(data.roomCode)
         if (!room) {
-          console.log('Room not found:', data.roomCode)
+          console.log('[JOIN_ROOM] Room not found:', data.roomCode)
           socket.emit('error', { message: 'Room not found' })
           return
         }
         
         if (room.guest) {
-          console.log('Room is full:', data.roomCode)
+          console.log('[JOIN_ROOM] Room is full:', data.roomCode)
           socket.emit('error', { message: 'Room is full' })
           return
         }
@@ -428,7 +442,7 @@ app.prepare().then(() => {
         
         // Ensure socket joins the room FIRST
         socket.join(data.roomCode)
-        console.log(`Socket ${socket.id} joined room ${data.roomCode}`)
+        console.log(`[JOIN_ROOM] Socket ${socket.id} joined room ${data.roomCode}`)
         
         room.guest = {
           id: playerName,
@@ -460,9 +474,11 @@ app.prepare().then(() => {
           roomCode: data.roomCode,
           room: roomData
         })
+        console.log(`[JOIN_ROOM] Emitted room_joined to socket ${socket.id}`)
         
         // Notify all players in the room about the update
         io.to(data.roomCode).emit('room-update', roomData)
+        console.log(`[JOIN_ROOM] Emitted room-update to room ${data.roomCode}`)
         
         // Send a specific event to confirm both players are connected
         io.to(data.roomCode).emit('players-connected', {
@@ -471,9 +487,9 @@ app.prepare().then(() => {
           canStartGame: room.players.length >= 2
         })
         
-        console.log(`Player ${playerName} joined room ${data.roomCode}. Total players: ${room.players.length}`)
+        console.log(`[JOIN_ROOM] SUCCESS - Player ${playerName} joined room ${data.roomCode}. Total players: ${room.players.length}`)
       } catch (error) {
-        console.error('Error joining room:', error)
+        console.error('[JOIN_ROOM] ERROR:', error)
         socket.emit('error', { message: error.message })
       }
     })

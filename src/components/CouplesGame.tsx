@@ -45,26 +45,43 @@ export default function CouplesGame({ userId, userName }: CouplesGameProps) {
       ? process.env.NEXT_PUBLIC_SOCKET_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin
       : 'http://localhost:3000'
     
-    console.log('Connecting to socket server:', socketUrl)
+    console.log('[SOCKET] Connecting to:', socketUrl)
+    console.log('[SOCKET] Environment:', process.env.NODE_ENV)
+    console.log('[SOCKET] NEXT_PUBLIC_SOCKET_URL:', process.env.NEXT_PUBLIC_SOCKET_URL)
+    console.log('[SOCKET] NEXT_PUBLIC_APP_URL:', process.env.NEXT_PUBLIC_APP_URL)
     
     const newSocket = io(socketUrl, {
-      transports: ['websocket', 'polling'],
+      path: '/socket.io/',
+      transports: ['polling', 'websocket'],
       timeout: 20000,
-      forceNew: true
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+      autoConnect: true
     })
     setSocket(newSocket)
 
     newSocket.on('connect', () => {
-      console.log('Connected to game server with ID:', newSocket.id)
-      console.log('Socket URL:', socketUrl)
+      console.log('[SOCKET] ✅ Connected to game server')
+      console.log('[SOCKET] Socket ID:', newSocket.id)
+      console.log('[SOCKET] Transport:', newSocket.io.engine.transport.name)
     })
 
-    newSocket.on('disconnect', () => {
-      console.log('Disconnected from game server')
+    newSocket.on('disconnect', (reason) => {
+      console.log('[SOCKET] ❌ Disconnected from game server. Reason:', reason)
     })
     
     newSocket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error)
+      console.error('[SOCKET] ❌ Connection error:', error.message)
+      console.error('[SOCKET] Error details:', error)
+    })
+
+    newSocket.on('reconnect_attempt', (attemptNumber) => {
+      console.log(`[SOCKET] 🔄 Reconnection attempt ${attemptNumber}`)
+    })
+
+    newSocket.on('reconnect', (attemptNumber) => {
+      console.log(`[SOCKET] ✅ Reconnected after ${attemptNumber} attempts`)
     })
 
     newSocket.on('room_created', (data) => {
@@ -203,16 +220,19 @@ export default function CouplesGame({ userId, userName }: CouplesGameProps) {
   }, [])
 
   const createRoom = () => {
-    console.log('Creating room with userName:', userName)
+    console.log('[CREATE_ROOM] Button clicked')
+    console.log('[CREATE_ROOM] userName:', userName)
+    console.log('[CREATE_ROOM] Socket connected:', socket?.connected)
+    console.log('[CREATE_ROOM] Socket ID:', socket?.id)
     
     if (socket && socket.connected) {
       socket.emit('create_room', {
         playerName: userName,
         gameType: 'couples'
       })
-      console.log('Emitted create_room event')
+      console.log('[CREATE_ROOM] Event emitted successfully')
     } else {
-      console.error('Socket not connected')
+      console.error('[CREATE_ROOM] Socket not connected')
       alert('Not connected to server. Please refresh the page.')
     }
   }
@@ -223,16 +243,20 @@ export default function CouplesGame({ userId, userName }: CouplesGameProps) {
       return
     }
     
-    console.log('Joining room with code:', roomId.trim(), 'userName:', userName)
+    console.log('[JOIN_ROOM] Button clicked')
+    console.log('[JOIN_ROOM] Room code:', roomId.trim())
+    console.log('[JOIN_ROOM] userName:', userName)
+    console.log('[JOIN_ROOM] Socket connected:', socket?.connected)
+    console.log('[JOIN_ROOM] Socket ID:', socket?.id)
     
     if (socket && socket.connected) {
       socket.emit('join_room', {
         roomCode: roomId.trim(),
         playerName: userName
       })
-      console.log('Emitted join_room event')
+      console.log('[JOIN_ROOM] Event emitted successfully')
     } else {
-      console.error('Socket not connected')
+      console.error('[JOIN_ROOM] Socket not connected')
       alert('Not connected to server. Please refresh the page.')
     }
   }

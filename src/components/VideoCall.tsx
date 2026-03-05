@@ -1,543 +1,328 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
-import Peer from 'simple-peer'
+import { useEffect, useRef, useState } from 'react'
+import { Device } from 'mediasoup-client'
 import { io, Socket } from 'socket.io-client'
 
 interface VideoCallProps {
   roomId: string
   userId: string
-  onCallEnd?: () => void
-  className?: string
-  showControls?: boolean
+  onClose: () => void
 }
 
-interface CallStats {
-  connectionState: string
-  audioLevel: number
-  videoQuality: string
-}
-
-export default function VideoCall({ 
-  roomId, 
-  userId, 
-  onCallEnd, 
-  className = '',
-  showControls = true 
-}: VideoCallProps) {
-  const [stream, setStream] = useState<MediaStream | null>(null)
-  const [peer, setPeer] = useState<Peer.Instance | null>(null)
-  const [socket, setSocket] = useState<Socket | null>(null)
+export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
   const [isConnected, setIsConnected] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [isVideoOff, setIsVideoOff] = useState(false)
-  const [isIncoming, setIsIncoming] = useState(false)
-  const [callStats, setCallStats] = useState<CallStats>({ connectionState: 'new', audioLevel: 0, videoQuality: 'HD' })
   const [error, setError] = useState<string | null>(null)
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const [showStats, setShowStats] = useState(false)
-  const [otherUsers, setOtherUsers] = useState<string[]>([])
-  const [isInitiator, setIsInitiator] = useState(false)
 
+  const socketRef = useRef<Socket | null>(null)
+  const deviceRef = useRef<Device | null>(null)
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const localStreamRef = useRef<MediaStream | null>(null)
+  const sendTransportRef = useRef<any>(null)
+  const recvTransportRef = useRef<any>(null)
+  const producersRef = useRef<Map<string, any>>(new Map())
+  const consumersRef = useRef<Map<string, any>>(new Map())
 
-  const getSocketUrl = useCallback(() => {
-    if (process.env.NODE_ENV === 'production') {
-      return process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin
-    }
-    return 'http://localhost:3000'
+  useEffect(() => {
+    initializeCall()
+    return () => cleanup()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const initializeMedia = useCallback(async () => {
+  const initializeCall = async () => {
     try {
-      console.log('Initializing media for user:', userId)
-      
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Media devices not supported')
-      }
-      
-      const constraints = {
-        video: {
-          width: { ideal: 640, max: 1280 },
-          height: { ideal: 480, max: 720 },
-          frameRate: { ideal: 15, max: 30 },
-          facingMode: 'user'
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 44100
-        }
-      }
-      
-      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints)
-      console.log('Media stream obtained:', mediaStream.getTracks().length, 'tracks')
-      
-      const videoTracks = mediaStream.getVideoTracks()
-      const audioTracks = mediaStream.getAudioTracks()
-      
-      if (videoTracks.length === 0 || audioTracks.length === 0) {
-        throw new Error('Required media tracks not available')
-      }
-      
-      setStream(mediaStream)
-      
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = mediaStream
-        localVideoRef.current.onloadedmetadata = () => {
-          localVideoRef.current?.play().catch(console.error)
-        }
-      }
-      
-      setupAudioAnalysis(mediaStream)
-      
-    } catch (error: any) {
-      console.error('Error accessing media devices:', error)
-      setError(`Camera/Microphone access denied: ${error.message}`)
-      
-      try {
-        const audioOnlyStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        setStream(audioOnlyStream)
-        console.log('Fallback to audio-only mode')
-      } catch (audioError) {
-        console.error('Audio-only fallback failed:', audioError)
-      }
-    }
-  }, [userId])
+      // Connect to socket
+      socketRef.current = io(window.location.origin, { path: '/socket.io/' })
 
-  const setupAudioAnalysis = (stream: MediaStream) => {
-    try {
-      const audioContext = new AudioContext()
-      const analyser = audioContext.createAnalyser()
-      const source = audioContext.createMediaStreamSource(stream)
-      
-      analyser.fftSize = 256
-      source.connect(analyser)
-      
-      audioContextRef.current = audioContext
-      analyserRef.current = analyser
-      
-      const monitorAudio = () => {
-        if (analyserRef.current) {
-          const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
-          analyserRef.current.getByteFrequencyData(dataArray)
-          const average = dataArray.reduce((a, b) => a + b) / dataArray.length
-          setCallStats(prev => ({ ...prev, audioLevel: average }))
+      socketRef.current.on('connect', async () => {
+        console.log('Socket connected')
+        await joinRoom()
+      })
+
+      socketRef.current.on('newProducer', async ({ producerId, peerId, kind }) => {
+        console.log('New producer:', producerId, kind)
+        await consumeMedia(producerId, kind)
+      })
+
+      socketRef.current.on('peerClosed', ({ peerId }) => {
+        console.log('Peer closed:', peerId)
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = null
         }
-        requestAnimationFrame(monitorAudio)
-      }
-      monitorAudio()
-    } catch (error) {
-      console.warn('Audio analysis setup failed:', error)
+      })
+
+      socketRef.current.on('connect_error', (err) => {
+        setError('Connection failed: ' + err.message)
+      })
+    } catch (err: any) {
+      setError(err.message)
     }
   }
 
-  const createPeer = useCallback((initiator: boolean, stream: MediaStream, targetSocket: Socket) => {
-    console.log(`Creating peer - initiator: ${initiator}, roomId: ${roomId}, userId: ${userId}`)
-    
-    if (peer) {
-      console.log('Destroying existing peer before creating new one')
-      peer.destroy()
-      setPeer(null)
-    }
-    
-    const newPeer = new Peer({
-      initiator,
-      trickle: false,
-      stream,
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:global.stun.twilio.com:3478' }
-        ]
-      }
-    })
+  const joinRoom = async () => {
+    try {
+      // Get router RTP capabilities
+      const { rtpCapabilities } = await emitAsync('getRouterRtpCapabilities', { roomId })
 
-    newPeer.on('signal', (signal) => {
-      console.log('Sending signal:', signal.type || 'candidate')
-      targetSocket.emit('video-signal', { signal, roomId, userId })
-    })
+      // Create device
+      deviceRef.current = new Device()
+      await deviceRef.current.load({ routerRtpCapabilities: rtpCapabilities })
 
-    newPeer.on('stream', (remoteStream) => {
-      console.log('Received remote stream')
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStream
-        remoteVideoRef.current.play().catch(console.error)
-      }
-      setIsConnected(true)
-    })
+      // Create transports
+      await createTransports()
 
-    newPeer.on('error', (err) => {
-      console.error('Peer error:', err)
-      setError(`Connection error: ${err.message}`)
-    })
-
-    return newPeer
-  }, [roomId, userId, peer])
-
-  useEffect(() => {
-    if (!stream) return
-    
-    const newSocket = io(getSocketUrl(), {
-      transports: ['websocket', 'polling'],
-      timeout: 30000,
-      forceNew: true,
-      reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 2000,
-      reconnectionDelayMax: 10000,
-      randomizationFactor: 0.5,
-      upgrade: true,
-      rememberUpgrade: true
-    })
-    
-    setSocket(newSocket)
-    console.log(`Joining video room: ${roomId} as user: ${userId}`)
-
-    let joinRetryCount = 0
-    const maxJoinRetries = 3
-
-    const attemptJoin = () => {
-      if (newSocket.connected) {
-        console.log('Socket connected, joining video room')
-        newSocket.emit('join-video-room', { roomId, userId })
-      } else if (joinRetryCount < maxJoinRetries) {
-        joinRetryCount++
-        console.log(`Retrying join attempt ${joinRetryCount}/${maxJoinRetries}`)
-        setTimeout(attemptJoin, 2000)
-      }
-    }
-
-    newSocket.on('connect', () => {
-      console.log('Socket connected successfully')
-      joinRetryCount = 0
-      attemptJoin()
-    })
-
-    newSocket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error)
-      setError('Connection failed - please check your internet')
-    })
-
-    newSocket.on('video-room-joined', ({ otherUsers: users, totalUsers }) => {
-      console.log(`Joined video room. Total users: ${totalUsers}, Other users:`, users)
-      setOtherUsers(users)
-      setError(null)
-      
-      if (users.length > 0 && stream) {
-        console.log('Becoming initiator for existing users')
-        setIsInitiator(true)
-        const newPeer = createPeer(true, stream, newSocket)
-        setPeer(newPeer)
-      }
-    })
-
-    newSocket.on('user-joined-video', ({ userId: joinedUserId, totalUsers }) => {
-      console.log(`User joined video: ${joinedUserId}, Total: ${totalUsers}`)
-      if (joinedUserId !== userId && stream && !peer) {
-        console.log('New user joined, waiting for their signal')
-        setOtherUsers(prev => [...prev, joinedUserId])
-      }
-    })
-
-    newSocket.on('video-signal', ({ signal, userId: senderId }) => {
-      console.log(`Received signal from ${senderId}:`, signal.type || 'candidate')
-      if (senderId !== userId) {
-        if (!peer && stream) {
-          console.log('Creating receiver peer for signal')
-          const newPeer = createPeer(false, stream, newSocket)
-          setPeer(newPeer)
-          setIsIncoming(true)
-          newPeer.signal(signal)
-        } else if (peer && !peer.destroyed) {
-          console.log('Signaling existing peer')
-          peer.signal(signal)
-        }
-      }
-    })
-
-    newSocket.on('user-left-video', ({ userId: leftUserId, totalUsers }) => {
-      console.log(`User left video: ${leftUserId}, Remaining: ${totalUsers}`)
-      if (leftUserId !== userId) {
-        setIsConnected(false)
-        setOtherUsers(prev => prev.filter(id => id !== leftUserId))
-        setPeer(currentPeer => {
-          if (currentPeer && !currentPeer.destroyed) {
-            currentPeer.destroy()
-          }
-          return null
-        })
-        setCallStats(prev => ({ ...prev, connectionState: 'disconnected' }))
-      }
-    })
-
-    newSocket.on('video-error', ({ message }) => {
-      console.error('Video error:', message)
-      setError(message)
-    })
-
-    newSocket.on('disconnect', (reason) => {
-      console.log('Socket disconnected:', reason)
-      setCallStats(prev => ({ ...prev, connectionState: 'disconnected' }))
-      if (reason === 'io server disconnect') {
-        newSocket.connect()
-      }
-    })
-
-    newSocket.on('reconnect', (attemptNumber) => {
-      console.log('Socket reconnected after', attemptNumber, 'attempts')
-      attemptJoin()
-    })
-
-    newSocket.on('reconnect_error', (error) => {
-      console.error('Reconnection error:', error)
-    })
-
-    return () => {
-      console.log('Cleaning up video call')
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current)
-      }
-      setPeer(currentPeer => {
-        if (currentPeer && !currentPeer.destroyed) {
-          currentPeer.destroy()
-        }
-        return null
+      // Get user media
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 1280, height: 720 },
+        audio: true
       })
-      newSocket.emit('leave-video-room', { roomId, userId })
-      newSocket.disconnect()
-    }
-  }, [stream, roomId, userId, createPeer, getSocketUrl, peer])
 
-  useEffect(() => {
-    initializeMedia()
-    
-    return () => {
-      console.log('VideoCall component unmounting, cleaning up...')
-      if (stream) {
-        stream.getTracks().forEach(track => {
-          track.stop()
-          console.log('Stopped track:', track.kind)
+      localStreamRef.current = stream
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream
+      }
+
+      // Produce media
+      const videoTrack = stream.getVideoTracks()[0]
+      const audioTrack = stream.getAudioTracks()[0]
+
+      if (videoTrack) await produceMedia(videoTrack, 'video')
+      if (audioTrack) await produceMedia(audioTrack, 'audio')
+
+      // Get existing producers
+      const { producers } = await emitAsync('getProducers', { roomId })
+      for (const { producerId, kind } of producers) {
+        await consumeMedia(producerId, kind)
+      }
+
+      setIsConnected(true)
+    } catch (err: any) {
+      setError(err.message)
+    }
+  }
+
+  const createTransports = async () => {
+    // Send transport
+    const sendTransportData = await emitAsync('createWebRtcTransport', {
+      roomId,
+      direction: 'send'
+    })
+
+    sendTransportRef.current = deviceRef.current!.createSendTransport(sendTransportData)
+
+    sendTransportRef.current.on('connect', async ({ dtlsParameters }: any, callback: any, errback: any) => {
+      try {
+        await emitAsync('connectWebRtcTransport', {
+          roomId,
+          transportId: sendTransportRef.current.id,
+          dtlsParameters
         })
+        callback()
+      } catch (err) {
+        errback(err)
       }
-      if (peer) {
-        peer.destroy()
-        console.log('Destroyed peer connection')
+    })
+
+    sendTransportRef.current.on('produce', async ({ kind, rtpParameters }: any, callback: any, errback: any) => {
+      try {
+        const { id } = await emitAsync('produce', {
+          roomId,
+          transportId: sendTransportRef.current.id,
+          kind,
+          rtpParameters
+        })
+        callback({ id })
+      } catch (err) {
+        errback(err)
       }
-      if (socket) {
-        socket.emit('leave-video-room', { roomId, userId })
-        socket.disconnect()
+    })
+
+    // Receive transport
+    const recvTransportData = await emitAsync('createWebRtcTransport', {
+      roomId,
+      direction: 'recv'
+    })
+
+    recvTransportRef.current = deviceRef.current!.createRecvTransport(recvTransportData)
+
+    recvTransportRef.current.on('connect', async ({ dtlsParameters }: any, callback: any, errback: any) => {
+      try {
+        await emitAsync('connectWebRtcTransport', {
+          roomId,
+          transportId: recvTransportRef.current.id,
+          dtlsParameters
+        })
+        callback()
+      } catch (err) {
+        errback(err)
       }
-      if (audioContextRef.current) {
-        audioContextRef.current.close()
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current)
+    })
+  }
+
+  const produceMedia = async (track: MediaStreamTrack, kind: 'audio' | 'video') => {
+    const producer = await sendTransportRef.current.produce({ track })
+    producersRef.current.set(kind, producer)
+  }
+
+  const consumeMedia = async (producerId: string, kind: string) => {
+    const { id, rtpParameters } = await emitAsync('consume', {
+      roomId,
+      transportId: recvTransportRef.current.id,
+      producerId,
+      rtpCapabilities: deviceRef.current!.rtpCapabilities
+    })
+
+    const consumer = await recvTransportRef.current.consume({
+      id,
+      producerId,
+      kind,
+      rtpParameters
+    })
+
+    consumersRef.current.set(id, consumer)
+
+    await emitAsync('resumeConsumer', { roomId, consumerId: id })
+
+    if (remoteVideoRef.current) {
+      const stream = new MediaStream([consumer.track])
+      if (kind === 'video') {
+        remoteVideoRef.current.srcObject = stream
+      } else {
+        const audioStream = remoteVideoRef.current.srcObject as MediaStream
+        if (audioStream) {
+          audioStream.addTrack(consumer.track)
+        } else {
+          remoteVideoRef.current.srcObject = stream
+        }
       }
     }
-  }, [initializeMedia])
+  }
+
+  const emitAsync = (event: string, data: any): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      socketRef.current?.emit(event, data, (response: any) => {
+        if (response.error) reject(new Error(response.error))
+        else resolve(response)
+      })
+    })
+  }
 
   const toggleMute = () => {
-    if (stream) {
-      stream.getAudioTracks().forEach(track => {
-        track.enabled = !track.enabled
-      })
+    const audioProducer = producersRef.current.get('audio')
+    if (audioProducer) {
+      if (isMuted) audioProducer.resume()
+      else audioProducer.pause()
       setIsMuted(!isMuted)
     }
   }
 
   const toggleVideo = () => {
-    if (stream) {
-      stream.getVideoTracks().forEach(track => {
-        track.enabled = !track.enabled
-      })
+    const videoProducer = producersRef.current.get('video')
+    if (videoProducer) {
+      if (isVideoOff) videoProducer.resume()
+      else videoProducer.pause()
       setIsVideoOff(!isVideoOff)
     }
   }
 
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement && containerRef.current) {
-      containerRef.current.requestFullscreen()
-      setIsFullscreen(true)
-    } else {
-      document.exitFullscreen()
-      setIsFullscreen(false)
-    }
+  const cleanup = () => {
+    localStreamRef.current?.getTracks().forEach(track => track.stop())
+    producersRef.current.forEach(producer => producer.close())
+    consumersRef.current.forEach(consumer => consumer.close())
+    sendTransportRef.current?.close()
+    recvTransportRef.current?.close()
+    socketRef.current?.disconnect()
   }
 
-  const endCall = () => {
-    console.log('Ending call...')
-    stream?.getTracks().forEach(track => track.stop())
-    peer?.destroy()
-    socket?.emit('leave-video-room', { roomId, userId })
-    socket?.disconnect()
-    audioContextRef.current?.close()
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current)
-    }
-    onCallEnd?.()
-  }
-
-  if (error) {
-    return (
-      <div className={`relative w-full h-full bg-gray-900 rounded-lg overflow-hidden flex items-center justify-center ${className}`}>
-        <div className="text-center text-white p-6">
-          <div className="text-6xl mb-4">⚠️</div>
-          <h3 className="text-xl font-bold mb-2">Call Error</h3>
-          <p className="text-gray-300 mb-4">{error}</p>
-          <button
-            onClick={endCall}
-            className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-          >
-            End Call
-          </button>
-        </div>
-      </div>
-    )
+  const handleEndCall = () => {
+    cleanup()
+    onClose()
   }
 
   return (
-    <div ref={containerRef} className={`relative w-full h-full bg-gray-900 rounded-lg overflow-hidden ${className}`}>
-      {/* Remote Video */}
-      <video
-        ref={remoteVideoRef}
-        autoPlay
-        playsInline
-        className="w-full h-full object-cover"
-      />
-      
-      {/* Local Video */}
-      <div className="absolute top-4 right-4 group">
-        <video
-          ref={localVideoRef}
-          autoPlay
-          playsInline
-          muted
-          className={`bg-gray-800 rounded-lg object-cover border-2 border-white/20 transition-all duration-300 ${
-            isFullscreen ? 'w-48 h-36' : 'w-32 h-24'
-          } ${isVideoOff ? 'opacity-0' : 'opacity-100'}`}
-        />
-        {isVideoOff && (
-          <div className={`absolute inset-0 bg-gray-800 rounded-lg border-2 border-white/20 flex items-center justify-center ${
-            isFullscreen ? 'w-48 h-36' : 'w-32 h-24'
-          }`}>
-            <span className="text-white text-2xl">📹</span>
+    <div className="fixed inset-0 bg-black z-50 flex flex-col">
+      {error && (
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-4 py-2 rounded-lg z-10">
+          {error}
+        </div>
+      )}
+
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2 p-2">
+        <div className="relative bg-gray-900 rounded-lg overflow-hidden">
+          <video
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute bottom-4 left-4 text-white text-sm bg-black/50 px-3 py-1 rounded-full">
+            Partner
           </div>
-        )}
+        </div>
+
+        <div className="relative bg-gray-800 rounded-lg overflow-hidden">
+          <video
+            ref={localVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute bottom-4 left-4 text-white text-sm bg-black/50 px-3 py-1 rounded-full">
+            You {isVideoOff && '(Video Off)'}
+          </div>
+        </div>
       </div>
 
-      {/* Connection Status */}
-      {!isConnected && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="text-white text-center p-6">
-            <div className="animate-spin rounded-full h-12 w-12 border-4 border-white/20 border-t-white mx-auto mb-4"></div>
-            <h3 className="text-xl font-semibold mb-2">
-              {otherUsers.length === 0 ? 'Waiting for partner...' : 'Connecting...'}
-            </h3>
-            <p className="text-gray-300">Connection state: {callStats.connectionState}</p>
-            <p className="text-sm text-gray-400 mt-2">Room: {roomId}</p>
-          </div>
-        </div>
-      )}
+      <div className="bg-gray-900 p-4 flex justify-center items-center gap-4">
+        <button
+          onClick={toggleMute}
+          className={`p-4 rounded-full transition-colors ${
+            isMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-700 hover:bg-gray-600'
+          }`}
+        >
+          {isMuted ? (
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+            </svg>
+          ) : (
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+            </svg>
+          )}
+        </button>
 
-      {/* Call Stats */}
-      {showStats && isConnected && (
-        <div className="absolute top-4 left-4 bg-black/50 backdrop-blur-sm rounded-lg p-3 text-white text-sm">
-          <div>Status: {callStats.connectionState}</div>
-          <div>Audio: {callStats.audioLevel.toFixed(0)}dB</div>
-          <div>Quality: {callStats.videoQuality}</div>
-          <div>Users: {otherUsers.length + 1}/2</div>
-        </div>
-      )}
+        <button
+          onClick={handleEndCall}
+          className="p-4 rounded-full bg-red-500 hover:bg-red-600 transition-colors"
+        >
+          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
 
-      {/* Audio Level Indicator */}
-      {!isMuted && callStats.audioLevel > 10 && (
-        <div className="absolute bottom-20 left-4 flex space-x-1">
-          {[...Array(5)].map((_, i) => (
-            <div
-              key={i}
-              className={`w-2 h-6 rounded-full transition-all duration-100 ${
-                callStats.audioLevel > (i + 1) * 20 ? 'bg-green-500' : 'bg-gray-600'
-              }`}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Controls */}
-      {showControls && (
-        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2">
-          <div className="flex items-center space-x-3 bg-black/50 backdrop-blur-sm rounded-full px-6 py-3">
-            <button
-              onClick={toggleMute}
-              className={`p-3 rounded-full transition-all duration-200 ${
-                isMuted ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'
-              } text-white`}
-              title={isMuted ? 'Unmute' : 'Mute'}
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                {isMuted ? (
-                  <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.617.793L4.617 14H2a1 1 0 01-1-1V7a1 1 0 011-1h2.617l3.766-2.793a1 1 0 011.617.793zm7.617 2.924a1 1 0 011.414 0 9.972 9.972 0 010 14.1 1 1 0 11-1.414-1.414 7.971 7.971 0 000-11.272 1 1 0 010-1.414z" clipRule="evenodd" />
-                ) : (
-                  <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.617.793L4.617 14H2a1 1 0 01-1-1V7a1 1 0 011-1h2.617l3.766-2.793a1 1 0 011.617.793zM12 6a1 1 0 011.414 0 3.972 3.972 0 010 5.656 1 1 0 01-1.414-1.414 1.972 1.972 0 000-2.828A1 1 0 0112 6z" clipRule="evenodd" />
-                )}
-              </svg>
-            </button>
-            
-            <button
-              onClick={toggleVideo}
-              className={`p-3 rounded-full transition-all duration-200 ${
-                isVideoOff ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'
-              } text-white`}
-              title={isVideoOff ? 'Turn on camera' : 'Turn off camera'}
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                {isVideoOff ? (
-                  <path fillRule="evenodd" d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A2 2 0 0018 13V7a2 2 0 00-3.53-1.235L12 8.236V7a2 2 0 00-2-2H7.764l4.543-4.543z" clipRule="evenodd" />
-                ) : (
-                  <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
-                )}
-              </svg>
-            </button>
-            
-            <button
-              onClick={toggleFullscreen}
-              className="p-3 rounded-full bg-gray-600 hover:bg-gray-700 text-white transition-all duration-200"
-              title="Toggle fullscreen"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M3 4a1 1 0 011-1h4a1 1 0 010 2H6.414l2.293 2.293a1 1 0 11-1.414 1.414L5 6.414V8a1 1 0 01-2 0V4zm9 1a1 1 0 010-2h4a1 1 0 011 1v4a1 1 0 01-2 0V6.414l-2.293 2.293a1 1 0 11-1.414-1.414L13.586 5H12zm-9 7a1 1 0 012 0v1.586l2.293-2.293a1 1 0 111.414 1.414L6.414 15H8a1 1 0 010 2H4a1 1 0 01-1-1v-4zm13-1a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 010-2h1.586l-2.293-2.293a1 1 0 111.414-1.414L15 13.586V12a1 1 0 011-1z" clipRule="evenodd" />
-              </svg>
-            </button>
-            
-            <button
-              onClick={() => setShowStats(!showStats)}
-              className="p-3 rounded-full bg-gray-600 hover:bg-gray-700 text-white transition-all duration-200"
-              title="Toggle stats"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
-              </svg>
-            </button>
-            
-            <button
-              onClick={endCall}
-              className="p-3 rounded-full bg-red-600 hover:bg-red-700 text-white transition-all duration-200"
-              title="End call"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M2 3.5A1.5 1.5 0 013.5 2h1.148a1.5 1.5 0 011.465 1.175l.716 3.223a1.5 1.5 0 01-1.052 1.767l-.933.267c-.41.117-.643.555-.48.95a11.542 11.542 0 006.254 6.254c.395.163.833-.07.95-.48l.267-.933a1.5 1.5 0 011.767-1.052l3.223.716A1.5 1.5 0 0118 15.352V16.5a1.5 1.5 0 01-1.5 1.5H15c-1.149 0-2.263-.15-3.326-.43A13.022 13.022 0 012.43 8.326 13.019 13.019 0 012 5V3.5z" clipRule="evenodd" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
+        <button
+          onClick={toggleVideo}
+          className={`p-4 rounded-full transition-colors ${
+            isVideoOff ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-700 hover:bg-gray-600'
+          }`}
+        >
+          {isVideoOff ? (
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3l18 18" />
+            </svg>
+          ) : (
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+          )}
+        </button>
+      </div>
     </div>
   )
 }

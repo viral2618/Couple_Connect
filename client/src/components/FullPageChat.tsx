@@ -5,8 +5,6 @@ import { io, Socket } from 'socket.io-client'
 import ChatHeader from './chat/ChatHeader'
 import MessageList from './chat/MessageList'
 import ChatInput from './chat/ChatInput'
-import VideoCall from './VideoCall'
-import { useVideoCall } from '@/hooks/useVideoCall'
 
 interface Message {
   id: string
@@ -43,8 +41,6 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
   const [canChat, setCanChat] = useState(false)
   const [partnershipError, setPartnershipError] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  
-  const { callState, startCall, endCall } = useVideoCall()
 
   useEffect(() => {
     checkPartnership()
@@ -184,11 +180,6 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
-  const handleVideoCall = () => {
-    const roomId = [currentUser.id, partner.id].sort().join('-')
-    startCall(roomId, partner.id)
-  }
-
   if (!canChat) {
     return (
       <div className="h-full flex items-center justify-center bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50">
@@ -204,7 +195,7 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
 
   return (
     <div className="h-full flex flex-col bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50">
-      <ChatHeader partner={partner} isOnline={isOnline} onVideoCall={handleVideoCall} />
+      <ChatHeader partner={partner} isOnline={isOnline} />
       
       <div className="flex-1 overflow-hidden">
         <MessageList 
@@ -220,33 +211,6 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
         setNewMessage={setNewMessage} 
         sendMessage={sendMessage}
       />
-      
-      {/* Video Call Modal */}
-      {callState.isCallActive && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="w-full max-w-4xl h-3/4 bg-white rounded-lg overflow-hidden">
-            <div className="h-full flex flex-col">
-              <div className="bg-gray-800 text-white p-4 flex justify-between items-center">
-                <h3 className="text-lg font-semibold">Video Call with {partner.name}</h3>
-                <button
-                  onClick={endCall}
-                  className="text-red-400 hover:text-red-300"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="flex-1">
-                <VideoCall
-                  roomId={callState.roomId!}
-                  userId={currentUser.id}
-                  onCallEnd={endCall}
-                  className="w-full h-full"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
