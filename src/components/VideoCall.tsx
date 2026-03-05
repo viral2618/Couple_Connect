@@ -35,14 +35,23 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
     try {
       socketRef.current = io(window.location.origin, { 
         path: '/socket.io/',
-        transports: ['websocket', 'polling']
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000
       })
 
       socketRef.current.on('connect', async () => {
-        console.log('[VideoCall] Connected')
+        console.log('[VideoCall] Socket connected:', socketRef.current?.id)
+        console.log('[VideoCall] Joining room:', roomId)
+        
+        // CRITICAL: Join the socket room first
+        socketRef.current?.emit('join-video-room', { roomId, userId })
+        
         try {
           await joinRoom()
         } catch (err: any) {
+          console.error('[VideoCall] Join error:', err)
           setError('Failed to join: ' + err.message)
         }
       })
@@ -72,11 +81,14 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
 
   const joinRoom = async () => {
     try {
+      console.log('[VideoCall] Getting RTP capabilities for room:', roomId)
       const response = await emitAsync('getRouterRtpCapabilities', { roomId })
       
       if (!response?.rtpCapabilities) {
-        throw new Error('MediaSoup not available')
+        throw new Error('Video calling service is not available on this server. Please contact support.')
       }
+      
+      console.log('[VideoCall] RTP capabilities received')
 
       deviceRef.current = new Device()
       await deviceRef.current.load({ routerRtpCapabilities: response.rtpCapabilities })
@@ -296,12 +308,20 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
 
   const cleanup = () => {
     try {
+      console.log('[VideoCall] Cleaning up...')
       localStreamRef.current?.getTracks().forEach(track => track.stop())
       producersRef.current.forEach(producer => producer.close())
       consumersRef.current.forEach(consumer => consumer.close())
       sendTransportRef.current?.close()
       recvTransportRef.current?.close()
+      
+      // Leave the room before disconnecting
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('leave-video-room', { roomId, userId })
+      }
+      
       socketRef.current?.disconnect()
+      console.log('[VideoCall] Cleanup complete')
     } catch (err) {
       console.error('Cleanup error:', err)
     }

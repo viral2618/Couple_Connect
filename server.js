@@ -139,6 +139,34 @@ app.prepare().then(async () => {
     // Setup couples game handlers for this socket
     setupCouplesGameHandlers(io, socket, rooms)
 
+    // Simple WebRTC signaling for peer-to-peer video calls
+    socket.on('join-video-room', ({ roomId, userId }) => {
+      console.log(`[WebRTC] User ${userId} joining room ${roomId}`)
+      socket.join(roomId)
+      socket.to(roomId).emit('user-joined', { userId })
+    })
+
+    socket.on('offer', ({ roomId, offer }) => {
+      console.log(`[WebRTC] Relaying offer in room ${roomId}`)
+      socket.to(roomId).emit('offer', { offer, userId: socket.id })
+    })
+
+    socket.on('answer', ({ roomId, answer }) => {
+      console.log(`[WebRTC] Relaying answer in room ${roomId}`)
+      socket.to(roomId).emit('answer', { answer })
+    })
+
+    socket.on('ice-candidate', ({ roomId, candidate }) => {
+      console.log(`[WebRTC] Relaying ICE candidate in room ${roomId}`)
+      socket.to(roomId).emit('ice-candidate', { candidate })
+    })
+
+    socket.on('leave-video-room', ({ roomId }) => {
+      console.log(`[WebRTC] User leaving room ${roomId}`)
+      socket.to(roomId).emit('user-left')
+      socket.leave(roomId)
+    })
+
     // Enhanced video calling system for 2-way calls only
     socket.on('join-video-room', ({ roomId, userId }) => {
       if (!roomId || !userId) {

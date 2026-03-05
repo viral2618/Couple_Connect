@@ -7,7 +7,7 @@ import MessageList from './chat/MessageList'
 import ChatInput from './chat/ChatInput'
 import dynamic from 'next/dynamic'
 
-const VideoCall = dynamic(() => import('./VideoCall'), { ssr: false })
+const VideoCall = dynamic(() => import('./SimpleVideoCall'), { ssr: false })
 
 interface Message {
   id: string
