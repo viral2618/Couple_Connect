@@ -1,4 +1,7 @@
-import { useState } from 'react'
+'use client'
+
+import { useState, useRef, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 
 interface ChatInputProps {
   newMessage: string
@@ -13,9 +16,8 @@ interface ChatInputProps {
 }
 
 export default function ChatInput({ newMessage, setNewMessage, sendMessage, replyingTo, onCancelReply }: ChatInputProps) {
-  const [showGifPicker, setShowGifPicker] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
-  const [isExpanded, setIsExpanded] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -24,193 +26,162 @@ export default function ChatInput({ newMessage, setNewMessage, sendMessage, repl
     }
   }
 
-  const handleGifSelect = (gifUrl: string) => {
-    setNewMessage(`[GIF:${gifUrl}]`)
-    setShowGifPicker(false)
+  const emojiCategories = {
+    'Smileys': ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙', '🥲', '😋', '😛', '😜', '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔'],
+    'Hearts': ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❤️‍🔥', '❤️‍🩹', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟'],
+    'Gestures': ['👍', '👎', '👊', '✊', '🤛', '🤜', '🤞', '✌️', '🤟', '🤘', '👌', '🤌', '🤏', '👈', '👉', '👆', '👇', '☝️', '👋', '🤚', '🖐️', '✋', '🖖', '👏', '🙌', '👐', '🤲', '🤝', '🙏'],
+    'Celebration': ['🎉', '🎊', '🎈', '🎁', '🎀', '🎂', '🍰', '🧁', '🥳', '🎆', '🎇', '✨', '🎃', '🎄', '🎋', '🎍', '🎏', '🎐', '🎑', '🧧'],
+    'Symbols': ['💯', '🔥', '⭐', '🌟', '✨', '💫', '💥', '💢', '💦', '💨', '🕳️', '💬', '👁️‍🗨️', '🗨️', '🗯️', '💭', '💤', '✅', '❌', '⭕']
   }
 
-  const popularGifs = [
-    'https://media.giphy.com/media/3o7abKhOpu0NwenH3O/giphy.gif',
-    'https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif',
-    'https://media.giphy.com/media/3o6Zt4HU9uwXmXSAuI/giphy.gif',
-    'https://media.giphy.com/media/l0HlvtIPzPdt2usKs/giphy.gif'
-  ]
-
-  const popularEmojis = [
-    '😀', '😂', '🥰', '😍', '🤗', '😘', '😊', '😉',
-    '❤️', '💕', '💖', '💗', '💙', '💜', '🧡', '💛',
-    '👍', '👏', '🙌', '👋', '🤝', '💪', '🙏', '✨',
-    '🎉', '🎊', '🔥', '⭐', '💯', '✅', '❌', '💔'
-  ]
+  const [activeCategory, setActiveCategory] = useState<keyof typeof emojiCategories>('Smileys')
 
   const handleEmojiSelect = (emoji: string) => {
     setNewMessage(newMessage + emoji)
-    setShowEmojiPicker(false)
+    if (textareaRef.current) {
+      textareaRef.current.focus()
+    }
   }
 
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px'
+    }
+  }, [newMessage])
+
   return (
-    <div className="bg-white/95 backdrop-blur-md border-t border-rose-200/50 p-2 sm:p-3 shadow-lg">
+    <div className="bg-white/95 backdrop-blur-xl border-t border-rose-200/50 shadow-2xl">
       {/* Reply Preview */}
-      {replyingTo && (
-        <div className="mb-3 p-4 border-2 border-blue-200 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 shadow-lg animate-slideUp backdrop-blur-sm">
-          <div className="flex justify-between items-start mb-3">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-blue-100 rounded-full">
-                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                </svg>
+      <AnimatePresence>
+        {replyingTo && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="px-3 sm:px-4 pt-3 pb-2"
+          >
+            <div className="p-3 border-l-4 border-rose-500 bg-gradient-to-r from-rose-50 to-pink-50 rounded-r-xl">
+              <div className="flex justify-between items-start mb-1">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                  </svg>
+                  <span className="font-semibold text-rose-700 text-xs sm:text-sm">
+                    Replying to {replyingTo.sender.name}
+                  </span>
+                </div>
+                <motion.button
+                  whileHover={{ scale: 1.1, rotate: 90 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={onCancelReply}
+                  className="text-rose-400 hover:text-rose-600 p-1"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </motion.button>
               </div>
-              <h4 className="font-bold text-blue-700 text-sm">
-                Replying to {replyingTo.sender.name}
-              </h4>
+              <p className="text-xs sm:text-sm text-gray-600 line-clamp-2 pl-6">
+                {replyingTo.content.length > 80 ? `${replyingTo.content.substring(0, 80)}...` : replyingTo.content}
+              </p>
             </div>
-            <button 
-              onClick={onCancelReply}
-              className="text-blue-500 hover:text-blue-700 hover:bg-blue-100 p-1.5 rounded-full transition-all duration-200 group"
-              title="Cancel reply"
-            >
-              <svg className="w-4 h-4 group-hover:rotate-90 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <div className="text-sm text-gray-700 bg-white/70 backdrop-blur-sm p-3 rounded-xl border border-blue-100 shadow-sm">
-            <div className="font-medium text-blue-800 mb-1 text-xs uppercase tracking-wide opacity-75">Original Message</div>
-            <div className="line-clamp-2">
-              {replyingTo.content.length > 100 
-                ? `${replyingTo.content.substring(0, 100)}...` 
-                : replyingTo.content
-              }
-            </div>
-          </div>
-        </div>
-      )}
-      {/* GIF Picker */}
-      {showGifPicker && (
-        <div className="mb-3 p-3 border border-rose-200 rounded-2xl bg-gradient-to-r from-rose-50 to-pink-50 shadow-lg animate-slideUp">
-          <div className="flex justify-between items-center mb-3">
-            <h4 className="font-bold text-rose-700 flex items-center text-sm">
-              <span className="mr-2">🎉</span>Choose a GIF
-            </h4>
-            <button 
-              onClick={() => setShowGifPicker(false)}
-              className="text-rose-500 hover:text-rose-700 font-bold text-lg transition-colors p-1 hover:bg-rose-100 rounded-full"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {popularGifs.map((gif, index) => (
-              <img
-                key={index}
-                src={gif}
-                alt={`GIF ${index + 1}`}
-                className="w-full h-16 object-cover rounded-xl cursor-pointer hover:opacity-80 transition-all duration-200 shadow-md hover:shadow-lg active:scale-95"
-                onClick={() => handleGifSelect(gif)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-      
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Emoji Picker */}
-      {showEmojiPicker && (
-        <div className="mb-3 p-3 border border-rose-200 rounded-2xl bg-gradient-to-r from-rose-50 to-pink-50 shadow-lg animate-slideUp">
-          <div className="flex justify-between items-center mb-3">
-            <h4 className="font-bold text-rose-700 flex items-center text-sm">
-              <span className="mr-2">😊</span>Choose an Emoji
-            </h4>
-            <button 
-              onClick={() => setShowEmojiPicker(false)}
-              className="text-rose-500 hover:text-rose-700 font-bold text-lg transition-colors p-1 hover:bg-rose-100 rounded-full"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="grid grid-cols-8 gap-1">
-            {popularEmojis.map((emoji, index) => (
-              <button
-                key={index}
-                onClick={() => handleEmojiSelect(emoji)}
-                className="text-xl p-2 rounded-lg hover:bg-rose-100 transition-all duration-200 cursor-pointer active:scale-95"
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      
-      {/* Main Input Area */}
-      <div className="flex items-end gap-2">
-        {/* Action Buttons - Mobile: Stack vertically when expanded */}
-        <div className={`flex gap-2 transition-all duration-300 ${
-          isExpanded ? 'flex-col' : 'flex-row'
-        } sm:flex-row`}>
-          <button
-            onClick={() => {
-              setShowEmojiPicker(!showEmojiPicker)
-              setShowGifPicker(false)
-            }}
-            className={`p-2.5 rounded-xl transition-all duration-200 font-medium shadow-sm hover:shadow-md active:scale-95 ${
-              showEmojiPicker 
-                ? 'bg-gradient-to-r from-amber-200 to-yellow-200 text-amber-700 scale-105' 
-                : 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-600 hover:from-amber-100 hover:to-yellow-100 hover:text-amber-600'
-            }`}
-            title="Add Emoji"
+      <AnimatePresence>
+        {showEmojiPicker && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="border-t border-rose-100 bg-gradient-to-br from-white to-rose-50/30 overflow-hidden"
           >
-            <span className="text-lg">😊</span>
-          </button>
-          
-          <button
-            onClick={() => {
-              setShowGifPicker(!showGifPicker)
-              setShowEmojiPicker(false)
-            }}
-            className={`p-2.5 rounded-xl transition-all duration-200 font-medium shadow-sm hover:shadow-md active:scale-95 ${
-              showGifPicker 
-                ? 'bg-gradient-to-r from-purple-200 to-pink-200 text-purple-700 scale-105' 
-                : 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-600 hover:from-purple-100 hover:to-pink-100 hover:text-purple-600'
+            <div className="p-3 sm:p-4">
+              {/* Category Tabs */}
+              <div className="flex gap-2 mb-3 overflow-x-auto pb-2 scrollbar-hide">
+                {Object.keys(emojiCategories).map((category) => (
+                  <motion.button
+                    key={category}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setActiveCategory(category as keyof typeof emojiCategories)}
+                    className={`px-3 py-1.5 rounded-full text-xs sm:text-sm font-medium whitespace-nowrap transition-all ${
+                      activeCategory === category
+                        ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-lg'
+                        : 'bg-white text-gray-600 hover:bg-rose-50 border border-rose-200'
+                    }`}
+                  >
+                    {category}
+                  </motion.button>
+                ))}
+              </div>
+
+              {/* Emoji Grid */}
+              <div className="grid grid-cols-8 sm:grid-cols-10 gap-1 max-h-48 overflow-y-auto scrollbar-thin scrollbar-thumb-rose-300 scrollbar-track-rose-50">
+                {emojiCategories[activeCategory].map((emoji, index) => (
+                  <motion.button
+                    key={`${emoji}-${index}`}
+                    whileHover={{ scale: 1.2 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => handleEmojiSelect(emoji)}
+                    className="text-2xl sm:text-3xl p-2 rounded-lg hover:bg-rose-100 transition-colors"
+                  >
+                    {emoji}
+                  </motion.button>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Input Area */}
+      <div className="p-3 sm:p-4">
+        <div className="flex items-end gap-2">
+          {/* Emoji Button */}
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            className={`p-2.5 sm:p-3 rounded-xl transition-all flex-shrink-0 ${
+              showEmojiPicker
+                ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-lg'
+                : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
             }`}
-            title="Add GIF"
           >
-            <span className="text-lg">🎉</span>
-          </button>
-        </div>
-        
-        {/* Message Input */}
-        <div className="flex-1 relative">
-          <textarea
-            value={newMessage}
-            onChange={(e) => {
-              setNewMessage(e.target.value)
-              setIsExpanded(e.target.value.length > 50)
-            }}
-            onKeyPress={handleKeyPress}
-            placeholder={replyingTo ? `Reply to ${replyingTo.sender.name}...` : "Type your message... 💕"}
-            rows={isExpanded ? 3 : 1}
-            className="w-full px-4 py-3 border-2 border-rose-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-rose-400 focus:border-rose-400 bg-white/90 placeholder-rose-400 transition-all duration-200 text-sm sm:text-base resize-none shadow-sm focus:shadow-md"
-            style={{ minHeight: '48px', maxHeight: '120px' }}
-          />
-        </div>
-        
-        {/* Send Button */}
-        <button
-          onClick={sendMessage}
-          disabled={!newMessage.trim()}
-          className="p-3 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-2xl hover:from-rose-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-medium shadow-lg hover:shadow-xl transform hover:scale-105 disabled:transform-none active:scale-95 flex-shrink-0 min-w-[48px] flex items-center justify-center group"
-          title={replyingTo ? `Reply to ${replyingTo.sender.name}` : "Send Message"}
-        >
-          {replyingTo ? (
-            <svg className="w-5 h-5 group-hover:translate-x-0.5 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-            </svg>
-          ) : (
-            <svg className="w-5 h-5 group-hover:translate-x-0.5 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <span className="text-xl sm:text-2xl">😊</span>
+          </motion.button>
+
+          {/* Text Input */}
+          <div className="flex-1 relative">
+            <textarea
+              ref={textareaRef}
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder={replyingTo ? `Reply to ${replyingTo.sender.name}...` : "Type a message... 💕"}
+              rows={1}
+              className="w-full px-4 py-3 pr-12 border-2 border-rose-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-rose-400 focus:border-transparent bg-white placeholder-rose-300 text-sm sm:text-base resize-none transition-all"
+              style={{ maxHeight: '120px' }}
+            />
+          </div>
+
+          {/* Send Button */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={sendMessage}
+            disabled={!newMessage.trim()}
+            className="p-3 sm:p-3.5 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition-all flex-shrink-0"
+          >
+            <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
             </svg>
-          )}
-        </button>
+          </motion.button>
+        </div>
       </div>
     </div>
   )

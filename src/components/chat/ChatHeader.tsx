@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { motion } from 'framer-motion'
 import { io } from 'socket.io-client'
 
 interface ChatHeaderProps {
@@ -69,71 +70,94 @@ export default function ChatHeader({ partner, isOnline, onVideoCall }: ChatHeade
   }
 
   return (
-    <div className="bg-white/95 backdrop-blur-md border-b border-rose-200/50 px-3 sm:px-4 py-3 flex items-center justify-between shadow-lg sticky top-0 z-10">
+    <div className="bg-white/95 backdrop-blur-xl border-b border-rose-200/50 px-3 sm:px-4 lg:px-6 py-3 sm:py-4 flex items-center justify-between shadow-xl sticky top-0 z-10">
       <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
         <div className="relative flex-shrink-0">
-          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-r from-rose-500 to-pink-500 rounded-full flex items-center justify-center text-white font-semibold shadow-lg ring-2 ring-white">
+          <motion.div
+            whileHover={{ scale: 1.05 }}
+            className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-rose-500 via-pink-500 to-purple-500 rounded-full flex items-center justify-center text-white font-bold shadow-xl ring-4 ring-white"
+          >
             {partner.avatar ? (
               <img src={partner.avatar} alt={partner.name} className="w-full h-full rounded-full object-cover" />
             ) : (
               <span className="text-sm sm:text-base">{partner.name.charAt(0).toUpperCase()}</span>
             )}
-          </div>
+          </motion.div>
           {isOnline && (
-            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 sm:w-4 sm:h-4 bg-green-500 border-2 border-white rounded-full animate-pulse shadow-sm"></div>
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 sm:w-4 sm:h-4 bg-green-500 border-2 border-white rounded-full shadow-lg"
+            >
+              <div className="w-full h-full bg-green-400 rounded-full animate-ping opacity-75"></div>
+            </motion.div>
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="font-bold text-gray-800 text-sm sm:text-base truncate">{partner.name}</h3>
-          <div className="flex items-center gap-1">
-            <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-gray-400'}`}></div>
-            <p className={`text-xs sm:text-sm font-medium ${
+          <h3 className="font-bold text-gray-800 text-sm sm:text-base lg:text-lg truncate">{partner.name}</h3>
+          <div className="flex items-center gap-1.5">
+            <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
+            <p className={`text-xs sm:text-sm font-semibold ${
               isOnline ? 'text-green-600' : 'text-gray-500'
             }`}>
               {isOnline ? 'Online' : 'Offline'}
             </p>
             {currentRoom && (
-              <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+              <motion.span
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="ml-2 px-2 py-0.5 bg-gradient-to-r from-blue-500 to-purple-500 text-white text-xs rounded-full font-bold shadow-md"
+              >
                 Room: {currentRoom}
-              </span>
+              </motion.span>
             )}
           </div>
         </div>
       </div>
       
-      <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
+      <div className="flex items-center space-x-1.5 sm:space-x-2 flex-shrink-0">
         {onVideoCall && (
-          <button
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
             onClick={onVideoCall}
-            className="p-2 sm:p-3 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full hover:shadow-lg transition-all duration-300 hover:scale-105 active:scale-95"
+            className="p-2 sm:p-3 bg-gradient-to-br from-rose-500 to-pink-500 text-white rounded-xl sm:rounded-2xl hover:shadow-2xl transition-all duration-300"
             title="Start Video Call"
           >
             <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
-          </button>
+          </motion.button>
         )}
         
         <div className="relative">
-          <button
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
             onClick={() => setShowRoomMenu(!showRoomMenu)}
-            className="p-2 sm:p-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-full hover:shadow-lg transition-all duration-300 hover:scale-105 active:scale-95"
+            className="p-2 sm:p-3 bg-gradient-to-br from-blue-500 to-purple-500 text-white rounded-xl sm:rounded-2xl hover:shadow-2xl transition-all duration-300"
             title="Room Options"
           >
             <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
               <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z" />
             </svg>
-          </button>
+          </motion.button>
           
           {showRoomMenu && (
-            <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 p-4 z-50">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: -10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-2xl border-2 border-rose-100 p-4 z-50"
+            >
               <div className="space-y-3">
-                <button
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={createRoom}
-                  className="w-full bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600 transition-colors"
+                  className="w-full bg-gradient-to-r from-green-500 to-emerald-500 text-white py-2.5 px-4 rounded-xl hover:shadow-lg transition-all font-semibold"
                 >
-                  Create Room
-                </button>
+                  🎮 Create Room
+                </motion.button>
                 
                 <div className="flex gap-2">
                   <input
@@ -141,26 +165,28 @@ export default function ChatHeader({ partner, isOnline, onVideoCall }: ChatHeade
                     placeholder="Room Code"
                     value={roomCode}
                     onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    className="flex-1 px-3 py-2 border-2 border-rose-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 focus:border-transparent"
                     maxLength={6}
                   />
-                  <button
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
                     onClick={joinRoom}
                     disabled={!roomCode.trim()}
-                    className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:bg-gray-400 transition-colors"
+                    className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-4 py-2 rounded-xl hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all font-semibold"
                   >
                     Join
-                  </button>
+                  </motion.button>
                 </div>
                 
                 <button
                   onClick={() => setShowRoomMenu(false)}
-                  className="w-full text-gray-500 text-sm hover:text-gray-700"
+                  className="w-full text-gray-500 text-sm hover:text-gray-700 font-medium py-2"
                 >
                   Cancel
                 </button>
               </div>
-            </div>
+            </motion.div>
           )}
         </div>
       </div>

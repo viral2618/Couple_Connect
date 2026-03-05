@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 
 interface Message {
   id: string
@@ -94,9 +95,11 @@ export default function MessageList({ messages, currentUserId, isLoading, messag
 
   return (
     <div 
-      className="h-full overflow-y-auto px-3 sm:px-4 py-2 sm:py-4 space-y-1 sm:space-y-2 bg-gradient-to-br from-rose-50/80 via-pink-50/80 to-purple-50/80 chat-scroll" 
+      className="h-full overflow-y-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-4 space-y-3 bg-gradient-to-br from-rose-50/50 via-pink-50/50 to-purple-50/50" 
       style={{
-        WebkitOverflowScrolling: 'touch'
+        WebkitOverflowScrolling: 'touch',
+        scrollbarWidth: 'thin',
+        scrollbarColor: '#fb7185 #fce7f3'
       }}
     >
       {messages.map((message, index) => {
@@ -107,103 +110,120 @@ export default function MessageList({ messages, currentUserId, isLoading, messag
         const isUnseen = !isOwn && !message.seenAt
         
         return (
-          <div key={message.id} className={`flex items-end gap-2 mb-1 ${isOwn ? 'justify-end' : 'justify-start'} animate-fadeIn`}>
+          <motion.div
+            key={message.id}
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.3 }}
+            className={`flex items-end gap-2 ${isOwn ? 'justify-end' : 'justify-start'}`}
+          >
             {/* Avatar for received messages */}
             {!isOwn && (
-              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-r from-purple-400 to-pink-400 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0 ${showAvatar ? 'opacity-100' : 'opacity-0'}`}>
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: showAvatar ? 1 : 0 }}
+                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs sm:text-sm font-bold flex-shrink-0 shadow-lg ${showAvatar ? 'opacity-100' : 'opacity-0'}`}>
                 {showAvatar && message.sender.name.charAt(0).toUpperCase()}
-              </div>
+              </motion.div>
             )}
             
             {/* Message bubble */}
-            <div className={`max-w-[85%] sm:max-w-[75%] md:max-w-lg lg:max-w-xl relative group`}>
+            <div className={`max-w-[80%] sm:max-w-[70%] md:max-w-md lg:max-w-lg relative group`}>
               {/* Message actions */}
-              <div className="absolute -top-8 right-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex gap-1 bg-white rounded-full shadow-lg p-1 z-10">
-                <button
+              <div className="absolute -top-10 right-0 opacity-0 group-hover:opacity-100 transition-all duration-200 flex gap-1 bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-1.5 z-10 border border-rose-100">
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
                   onClick={() => onReply(message)}
-                  className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                  className="p-2 hover:bg-rose-50 rounded-xl transition-colors"
                   title="Reply"
                 >
-                  <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                   </svg>
-                </button>
-                <button
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
                   onClick={() => setShowReactions(showReactions === message.id ? null : message.id)}
-                  className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                  className="p-2 hover:bg-rose-50 rounded-xl transition-colors"
                   title="React"
                 >
-                  <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </button>
+                  <span className="text-lg">😊</span>
+                </motion.button>
               </div>
 
               {/* Quick reactions popup */}
-              {showReactions === message.id && (
-                <div className="reactions-popup absolute -top-12 left-1/2 transform -translate-x-1/2 bg-white rounded-full shadow-lg p-2 flex gap-1 z-20 border">
-                  {quickReactions.map((emoji) => (
-                    <button
-                      key={emoji}
-                      onClick={() => handleReactionClick(message.id, emoji)}
-                      className="p-2 hover:bg-gray-100 rounded-full transition-all duration-200 hover:scale-110"
-                    >
-                      <span className="text-lg">{emoji}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+              <AnimatePresence>
+                {showReactions === message.id && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.8, y: 10 }}
+                    className="reactions-popup absolute -top-14 left-1/2 transform -translate-x-1/2 bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl p-2 flex gap-1 z-20 border-2 border-rose-200"
+                  >
+                    {quickReactions.map((emoji) => (
+                      <motion.button
+                        key={emoji}
+                        whileHover={{ scale: 1.3 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => handleReactionClick(message.id, emoji)}
+                        className="p-2 hover:bg-rose-50 rounded-xl transition-colors"
+                      >
+                        <span className="text-xl">{emoji}</span>
+                      </motion.button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Reply preview */}
               {replyMessage && (
-                <div className={`mb-2 p-3 rounded-xl text-sm border-l-4 backdrop-blur-sm transition-all duration-200 ${
-                  isOwn 
-                    ? 'bg-white/20 border-white/50 text-white/90' 
-                    : 'bg-blue-50/80 border-blue-300 text-blue-800'
-                }`}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <svg className="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <motion.div
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className={`mb-2 p-2.5 rounded-xl text-xs sm:text-sm border-l-4 backdrop-blur-sm ${
+                    isOwn 
+                      ? 'bg-white/20 border-white/50 text-white/90' 
+                      : 'bg-rose-50/80 border-rose-400 text-rose-900'
+                  }`}>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <svg className="w-3 h-3 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                     </svg>
-                    <span className="font-semibold text-xs opacity-80">{replyMessage.sender.name}</span>
+                    <span className="font-bold text-xs">{replyMessage.sender.name}</span>
                   </div>
-                  <div className="truncate font-medium">
+                  <div className="truncate opacity-90">
                     {replyMessage.content.length > 50 
                       ? `${replyMessage.content.substring(0, 50)}...` 
                       : replyMessage.content
                     }
                   </div>
-                </div>
+                </motion.div>
               )}
               
-              <div className={`px-4 py-3 shadow-sm transition-all duration-200 relative ${isOwn 
-                  ? `bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-2xl rounded-br-md shadow-lg` 
-                  : `bg-white text-gray-800 border ${isUnseen ? 'border-rose-300 shadow-rose-200/50 shadow-lg' : 'border-gray-200'} rounded-2xl rounded-bl-md hover:shadow-md`
+              <div className={`px-3 sm:px-4 py-2.5 sm:py-3 shadow-lg transition-all duration-200 relative ${isOwn 
+                  ? `bg-gradient-to-br from-rose-500 to-pink-500 text-white rounded-2xl rounded-br-sm` 
+                  : `bg-white text-gray-800 border-2 ${isUnseen ? 'border-rose-400 shadow-rose-300/50' : 'border-gray-100'} rounded-2xl rounded-bl-sm hover:shadow-xl`
               }`}>
                 {/* Unseen indicator */}
                 {isUnseen && (
-                  <div className="absolute -top-2 -right-2 flex items-center justify-center">
-                    <div className="w-4 h-4 bg-gradient-to-r from-rose-500 to-pink-500 rounded-full animate-pulse shadow-lg">
-                      <div className="w-2 h-2 bg-white rounded-full absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"></div>
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="absolute -top-2 -right-2"
+                  >
+                    <div className="w-5 h-5 bg-gradient-to-r from-rose-500 to-pink-500 rounded-full animate-pulse shadow-lg flex items-center justify-center">
+                      <div className="w-2 h-2 bg-white rounded-full"></div>
                     </div>
-                  </div>
+                  </motion.div>
                 )}
                 
-                {message.content.startsWith('[GIF:') && message.content.endsWith(']') ? (
-                  <img 
-                    src={message.content.slice(5, -1)} 
-                    alt="GIF" 
-                    className="max-w-full h-auto rounded-lg"
-                    style={{ maxHeight: '120px' }}
-                    loading="lazy"
-                  />
-                ) : (
-                  <p className="text-sm leading-relaxed break-words">{message.content}</p>
-                )}
+                <p className="text-sm sm:text-base leading-relaxed break-words">{message.content}</p>
                 
                 {/* Timestamp and status */}
-                <div className="flex items-center justify-between mt-2">
-                  <p className={`text-xs opacity-70 ${isOwn ? 'text-rose-100' : 'text-gray-500'}`}>
+                <div className="flex items-center justify-between mt-2 gap-2">
+                  <p className={`text-xs ${isOwn ? 'text-white/70' : 'text-gray-500'}`}>
                     {new Date(message.createdAt).toLocaleTimeString('en-US', { 
                       hour: '2-digit', 
                       minute: '2-digit',
@@ -211,14 +231,14 @@ export default function MessageList({ messages, currentUserId, isLoading, messag
                     })}
                   </p>
                   {isOwn && (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center">
                       {message.seenAt ? (
-                        <svg className="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                        <svg className="w-4 h-4 text-blue-300" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                           <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L4 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                         </svg>
                       ) : (
-                        <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                        <svg className="w-4 h-4 text-white/50" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                         </svg>
                       )}
@@ -227,9 +247,9 @@ export default function MessageList({ messages, currentUserId, isLoading, messag
                 </div>
               </div>
 
-              {/* Reactions - WhatsApp style */}
+              {/* Reactions */}
               {message.reactions && message.reactions.length > 0 && (
-                <div className={`absolute -bottom-2 ${isOwn ? 'left-2' : 'right-2'} flex gap-1`}>
+                <div className={`absolute -bottom-3 ${isOwn ? 'left-2' : 'right-2'} flex gap-1`}>
                   {Object.entries(
                     message.reactions.reduce((acc, r) => {
                       acc[r.emoji] = (acc[r.emoji] || 0) + 1
@@ -238,25 +258,27 @@ export default function MessageList({ messages, currentUserId, isLoading, messag
                   ).map(([emoji, count]) => {
                     const hasUserReacted = message.reactions?.some(r => r.emoji === emoji && r.userId === currentUserId)
                     return (
-                      <button
+                      <motion.button
                         key={emoji}
+                        whileHover={{ scale: 1.15 }}
+                        whileTap={{ scale: 0.9 }}
                         onClick={() => handleReactionClick(message.id, emoji)}
-                        className={`min-w-[32px] h-6 px-1.5 rounded-full text-xs flex items-center justify-center gap-1 transition-all duration-200 hover:scale-110 shadow-md border ${
+                        className={`min-w-[36px] h-7 px-2 rounded-full text-xs flex items-center justify-center gap-1 transition-all shadow-lg border-2 ${
                           hasUserReacted
-                            ? 'bg-blue-500 text-white border-blue-600'
-                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                            ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white border-rose-600'
+                            : 'bg-white text-gray-700 border-gray-200 hover:border-rose-300'
                         }`}
                         title={hasUserReacted ? 'Remove your reaction' : 'Add this reaction'}
                       >
-                        <span className="text-sm leading-none">{emoji}</span>
-                        {count > 1 && <span className="text-xs font-medium leading-none">{count}</span>}
-                      </button>
+                        <span className="text-base leading-none">{emoji}</span>
+                        {count > 1 && <span className="text-xs font-bold leading-none">{count}</span>}
+                      </motion.button>
                     )
                   })}
                 </div>
               )}
             </div>
-          </div>
+          </motion.div>
         )
       })}
       <div ref={messagesEndRef} />

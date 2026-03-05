@@ -51,8 +51,8 @@ const mediaCodecs = [
 async function createWorker() {
   const worker = await mediasoup.createWorker({
     logLevel: 'warn',
-    rtcMinPort: 10000,
-    rtcMaxPort: 10100
+    rtcMinPort: parseInt(process.env.MEDIASOUP_MIN_PORT) || 10000,
+    rtcMaxPort: parseInt(process.env.MEDIASOUP_MAX_PORT) || 10100
   })
 
   worker.on('died', () => {
@@ -125,11 +125,21 @@ function setupMediasoupHandlers(io, socket) {
       const room = rooms.get(roomId)
       if (!room) throw new Error('Room not found')
 
+      // Get announced IP from environment or detect it
+      let announcedIp = process.env.MEDIASOUP_ANNOUNCED_IP
+      
+      // If not set or is 0.0.0.0, try to detect or warn
+      if (!announcedIp || announcedIp === '0.0.0.0') {
+        console.warn('[MediaSoup] WARNING: MEDIASOUP_ANNOUNCED_IP not set properly!')
+        console.warn('[MediaSoup] Video calling may not work. Set your server public IP in .env.production')
+        announcedIp = undefined // Let mediasoup try to detect
+      }
+
       const webRtcTransportOptions = {
         listenIps: [
           {
             ip: '0.0.0.0',
-            announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || undefined
+            announcedIp: announcedIp
           }
         ],
         enableUdp: true,
@@ -140,6 +150,7 @@ function setupMediasoupHandlers(io, socket) {
         maxSctpMessageSize: 262144
       }
 
+      console.log(`[MediaSoup] Creating transport with announcedIp: ${announcedIp || 'auto-detect'}`)
       const transport = await room.router.createWebRtcTransport(webRtcTransportOptions)
 
       if (!room.peers.has(socket.id)) {

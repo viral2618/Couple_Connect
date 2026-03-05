@@ -59,8 +59,22 @@ MEILISEARCH_MASTER_KEY="your-meilisearch-master-key"
 # Domain
 NEXT_PUBLIC_APP_URL="https://your-domain.com"
 
-# Video Calling (Production only)
+# Video Calling (Production only) - CRITICAL!
+# Set this to your server's PUBLIC IP address
+# Find it with: curl ifconfig.me
 MEDIASOUP_ANNOUNCED_IP="your-server-public-ip"
+MEDIASOUP_MIN_PORT=10000
+MEDIASOUP_MAX_PORT=10100
+```
+
+**IMPORTANT:** For video calling to work, you MUST set `MEDIASOUP_ANNOUNCED_IP` to your server's public IP address.
+
+### 2.1 Quick Video Setup
+
+```bash
+# Automatically configure video calling
+chmod +x setup-video-production.sh
+./setup-video-production.sh
 ```
 
 ### 3. SSL Certificate
@@ -195,6 +209,15 @@ upstream app {
 ```
 
 ## 🐛 Troubleshooting
+
+### Video Calling Not Working?
+
+```bash
+# Run diagnostics
+node check-video-setup.js
+```
+
+See [VIDEO_CALLING_TROUBLESHOOTING.md](VIDEO_CALLING_TROUBLESHOOTING.md) for detailed solutions.
 
 ### Common Issues
 

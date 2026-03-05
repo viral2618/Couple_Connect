@@ -8,7 +8,9 @@
     "start": "NODE_ENV=production node server.js",
     "start:windows": "set NODE_ENV=production && node server.js",
     "postinstall": "prisma generate",
-    "setup-search": "node setup-custom-search.js"
+    "setup-search": "node setup-custom-search.js",
+    "check-video": "node check-video-setup.js",
+    "setup-video": "bash setup-video-production.sh"
   },
   "dependencies": {
     "@prisma/client": "^6.19.1",
