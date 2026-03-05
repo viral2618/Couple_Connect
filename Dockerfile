@@ -1,7 +1,12 @@
-FROM node:18-alpine
+FROM node:20
 
 # Install build dependencies for MediaSoup
-RUN apk add --no-cache python3 make g++ gcc linux-headers
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
