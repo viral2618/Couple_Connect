@@ -95,16 +95,8 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
       console.log('[VideoCall] Requesting user media...')
       // Get user media
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280, max: 1920 },
-          height: { ideal: 720, max: 1080 },
-          frameRate: { ideal: 30, max: 30 }
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
+        video: true,
+        audio: true
       })
 
       console.log('[VideoCall] Got user media, tracks:', stream.getTracks().length)
@@ -199,18 +191,7 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
 
   const produceMedia = async (track: MediaStreamTrack, kind: 'audio' | 'video') => {
     try {
-      const params: any = { track }
-      
-      if (kind === 'video') {
-        params.encodings = [
-          { maxBitrate: 500000, scaleResolutionDownBy: 1 }
-        ]
-        params.codecOptions = {
-          videoGoogleStartBitrate: 1000
-        }
-      }
-      
-      const producer = await sendTransportRef.current.produce(params)
+      const producer = await sendTransportRef.current.produce({ track })
       producersRef.current.set(kind, producer)
     } catch (err) {
       console.error(`Failed to produce ${kind}:`, err)
