@@ -17,6 +17,16 @@ const mediaCodecs = [
     parameters: {
       'x-google-start-bitrate': 1000
     }
+  },
+  {
+    kind: 'video',
+    mimeType: 'video/H264',
+    clockRate: 90000,
+    parameters: {
+      'packetization-mode': 1,
+      'profile-level-id': '42e01f',
+      'level-asymmetry-allowed': 1
+    }
   }
 ]
 
@@ -98,10 +108,17 @@ function setupMediasoupHandlers(io, socket) {
       if (!room) throw new Error('Room not found')
 
       const transport = await room.router.createWebRtcTransport({
-        listenIps: [{ ip: '0.0.0.0', announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || null }],
+        listenIps: [{ 
+          ip: '0.0.0.0', 
+          announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || undefined 
+        }],
         enableUdp: true,
         enableTcp: true,
-        preferUdp: true
+        preferUdp: true,
+        initialAvailableOutgoingBitrate: 1000000,
+        minimumAvailableOutgoingBitrate: 600000,
+        maxSctpMessageSize: 262144,
+        maxIncomingBitrate: 1500000
       })
 
       if (!room.peers.has(socket.id)) {
