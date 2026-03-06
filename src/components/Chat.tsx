@@ -39,28 +39,34 @@ export default function Chat({ currentUser, partner, onClose }: ChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    // Initialize socket connection
-    const socketInstance = io({
-      transports: ['websocket', 'polling']
+    const socketInstance = io(window.location.origin, {
+      path: '/socket.io/',
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5
     })
 
     socketInstance.on('connect', () => {
-      socketInstance.emit('join-room', currentUser.id)
+      console.log('[Chat] Connected')
+      const roomId = [currentUser.id, partner.id].sort().join('-')
+      socketInstance.emit('join-room', roomId)
     })
 
     socketInstance.on('receive-message', (message: Message) => {
-      setMessages(prev => [...prev, message])
+      setMessages(prev => {
+        if (prev.some(m => m.id === message.id)) return prev
+        return [...prev, message]
+      })
     })
 
     setSocket(socketInstance)
-
-    // Load existing messages
     fetchMessages()
 
     return () => {
       socketInstance.disconnect()
     }
-  }, [currentUser.id, partner.id])
+  }, [])
 
   useEffect(() => {
     scrollToBottom()
@@ -81,7 +87,9 @@ export default function Chat({ currentUser, partner, onClose }: ChatProps) {
   const sendMessage = async () => {
     if (!newMessage.trim() || !socket) return
 
-    const messageData = {
+    const tempId = `temp-${Date.now()}`
+    const optimisticMessage: Message = {
+      id: tempId,
       content: newMessage,
       receiverId: partner.id,
       senderId: currentUser.id,
@@ -89,26 +97,30 @@ export default function Chat({ currentUser, partner, onClose }: ChatProps) {
       createdAt: new Date().toISOString()
     }
 
+    setMessages(prev => [...prev, optimisticMessage])
+    setNewMessage('')
+
     try {
       const response = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: newMessage, receiverId: partner.id })
+        body: JSON.stringify({ content: optimisticMessage.content, receiverId: partner.id })
       })
 
       if (response.ok) {
         const savedMessage = await response.json()
-        setMessages(prev => [...prev, savedMessage])
-        socket.emit('send-message', savedMessage)
-        setNewMessage('')
+        setMessages(prev => prev.map(m => m.id === tempId ? savedMessage : m))
+        const roomId = [currentUser.id, partner.id].sort().join('-')
+        socket.emit('send-message', { ...savedMessage, roomId })
       }
     } catch (error) {
       console.error('Failed to send message:', error)
+      setMessages(prev => prev.filter(m => m.id !== tempId))
     }
   }
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
   }
 
   const formatTime = (dateString: string) => {

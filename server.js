@@ -427,7 +427,8 @@ app.prepare().then(async () => {
 
     socket.on('send-message', (message) => {
       if (!message.roomId) return
-      io.to(message.roomId).emit('receive-message', message)
+      console.log('[Chat] Broadcasting message to room:', message.roomId)
+      socket.to(message.roomId).emit('receive-message', message)
     })
 
     socket.on('message-reaction', (data) => {
