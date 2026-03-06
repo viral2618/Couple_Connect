@@ -22,6 +22,7 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
   const localStreamRef = useRef<MediaStream | null>(null)
   const isInitiatorRef = useRef(false)
   const makingOfferRef = useRef(false)
+  const iceCandidatesQueue = useRef<RTCIceCandidateInit[]>([])
 
   useEffect(() => {
     initCall()
@@ -147,9 +148,16 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
       }
     }
 
+    pc.oniceconnectionstatechange = () => {
+      console.log('[WebRTC] ICE connection state:', pc.iceConnectionState)
+    }
+
     pc.onconnectionstatechange = () => {
       console.log('[WebRTC] Connection state:', pc.connectionState)
-      if (pc.connectionState === 'failed') {
+      if (pc.connectionState === 'connected') {
+        setIsConnecting(false)
+        setError(null)
+      } else if (pc.connectionState === 'failed') {
         setError('Connection failed')
       }
     }
@@ -184,13 +192,17 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
       const pc = createPeerConnection()
       
       if (pc.signalingState !== 'stable') {
-        console.log('[WebRTC] Signaling state not stable, waiting...')
-        await Promise.all([
-          pc.signalingState === 'have-local-offer' && pc.setLocalDescription({ type: 'rollback' })
-        ])
+        console.log('[WebRTC] Signaling state not stable, rolling back')
+        if (pc.signalingState === 'have-local-offer') {
+          await pc.setLocalDescription({ type: 'rollback' })
+        }
       }
 
       await pc.setRemoteDescription(new RTCSessionDescription(offer))
+      console.log('[WebRTC] Remote description set from offer')
+      
+      await processQueuedCandidates()
+      
       const answer = await pc.createAnswer()
       await pc.setLocalDescription(answer)
 
@@ -207,7 +219,10 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
   const handleAnswer = async (answer: RTCSessionDescriptionInit) => {
     try {
       const pc = peerConnectionRef.current
-      if (!pc) return
+      if (!pc) {
+        console.error('[WebRTC] No peer connection for answer')
+        return
+      }
 
       if (pc.signalingState === 'stable') {
         console.log('[WebRTC] Already stable, ignoring answer')
@@ -215,6 +230,9 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
       }
 
       await pc.setRemoteDescription(new RTCSessionDescription(answer))
+      console.log('[WebRTC] Remote description set from answer')
+      
+      await processQueuedCandidates()
     } catch (err: any) {
       console.error('[WebRTC] Handle answer error:', err)
       setError(err.message)
@@ -224,11 +242,34 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
   const handleIceCandidate = async (candidate: RTCIceCandidateInit) => {
     try {
       const pc = peerConnectionRef.current
-      if (pc && pc.remoteDescription) {
+      if (!pc) return
+
+      if (pc.remoteDescription && pc.remoteDescription.type) {
         await pc.addIceCandidate(new RTCIceCandidate(candidate))
+        console.log('[WebRTC] ICE candidate added')
+      } else {
+        console.log('[WebRTC] Queuing ICE candidate')
+        iceCandidatesQueue.current.push(candidate)
       }
     } catch (err: any) {
       console.error('[WebRTC] Handle ICE candidate error:', err)
+    }
+  }
+
+  const processQueuedCandidates = async () => {
+    const pc = peerConnectionRef.current
+    if (!pc || !pc.remoteDescription) return
+
+    while (iceCandidatesQueue.current.length > 0) {
+      const candidate = iceCandidatesQueue.current.shift()
+      if (candidate) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate))
+          console.log('[WebRTC] Queued ICE candidate added')
+        } catch (err) {
+          console.error('[WebRTC] Error adding queued candidate:', err)
+        }
+      }
     }
   }
 
@@ -255,7 +296,9 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
   const cleanup = () => {
     localStreamRef.current?.getTracks().forEach(track => track.stop())
     peerConnectionRef.current?.close()
-    socketRef.current?.emit('leave-video-room', { roomId })
+    peerConnectionRef.current = null
+    iceCandidatesQueue.current = []
+    socketRef.current?.emit('leave-video-room', { roomId, userId })
     socketRef.current?.disconnect()
   }
 
