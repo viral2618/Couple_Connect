@@ -403,7 +403,7 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
               className="w-full h-full object-cover"
             />
             <div className="absolute bottom-6 left-6 bg-black/40 backdrop-blur-md text-white px-4 py-2 rounded-full border border-white/20">
-              <span className="font-medium">💕 Your Partner</span>
+              <span className="font-medium">💕 Your Partner (Connected)</span>
             </div>
           </div>
         </div>
