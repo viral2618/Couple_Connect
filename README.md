@@ -1,6 +1,6 @@
 # Couple Connect - Production Deployment Guide
 
-A Next.js application for couples with real-time chat and video calling features.
+A Next.js application for couples with real-time chat and video calling features. 
 
 ## 🚀 Quick Start (Development)
 
