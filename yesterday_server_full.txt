@@ -28,34 +28,33 @@ const app = express()
 const server = createServer(app)
 
 // Setup CORS
-const allowedOrigins = dev 
-  ? ['http://localhost:3000', 'http://127.0.0.1:3000'] 
-  : [
-      process.env.NEXT_PUBLIC_APP_URL || "https://your-domain.com",
-      'https://coupleconnect-production-35ae.up.railway.app'
-    ]
-
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true)
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true)
-    } else {
-      callback(null, true)
-    }
-  },
+  origin: dev ? ['http://localhost:3000', 'http://127.0.0.1:3000'] : [process.env.NEXT_PUBLIC_APP_URL || "https://your-domain.com"],
   credentials: true
 }))
 
 app.use(express.json())
 
+// Serve client build files in production
+if (!dev) {
+  app.use(express.static(path.join(__dirname, '../client/.next/static')))
+  app.use(express.static(path.join(__dirname, '../client/public')))
+  
+  // Handle client-side routing
+  app.get('*', (req, res, next) => {
+    // Skip API routes
+    if (req.path.startsWith('/api/') || req.path.startsWith('/health')) {
+      return next()
+    }
+    // Serve the client app
+    res.sendFile(path.join(__dirname, '../client/.next/server/pages/index.html'))
+  })
+}
+
 // Socket.IO setup
 const io = new Server(server, {
   cors: {
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true)
-      callback(null, true)
-    },
+    origin: dev ? ['http://localhost:3000', 'http://127.0.0.1:3000'] : [process.env.NEXT_PUBLIC_APP_URL || "https://your-domain.com"],
     methods: ["GET", "POST"],
     credentials: true
   },
@@ -148,6 +147,7 @@ io.on('connection', (socket) => {
       rooms.set(roomCode, room)
       socket.join(roomCode)
       
+      // Create clean room data for emission
       const roomCreatedData = {
         roomId: roomCode,
         roomCode: roomCode,
@@ -163,6 +163,7 @@ io.on('connection', (socket) => {
       }
       
       socket.emit('room_created', roomCreatedData)
+      
       console.log('Room created:', roomCode, 'by', playerName)
     } catch (error) {
       console.error('Error creating room:', error)
@@ -200,8 +201,10 @@ io.on('connection', (socket) => {
       })
       
       room.scores[playerName] = 0
+      
       socket.join(data.roomCode)
       
+      // Create clean room data for emission
       const roomJoinedData = {
         roomId: data.roomCode,
         roomCode: data.roomCode,
@@ -219,6 +222,7 @@ io.on('connection', (socket) => {
       
       socket.emit('room_joined', roomJoinedData)
       
+      // Create clean room update data
       const roomUpdateData = {
         id: room.id,
         code: room.code,
@@ -231,6 +235,7 @@ io.on('connection', (socket) => {
       }
       
       io.to(data.roomCode).emit('room-update', roomUpdateData)
+      
       console.log('Player', playerName, 'joined room:', data.roomCode)
     } catch (error) {
       console.error('Error joining room:', error)
@@ -240,8 +245,10 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id)
+    // Clean up rooms when players disconnect
     for (const [roomCode, room] of rooms.entries()) {
       if (room.host && room.host.socketId === socket.id) {
+        // Clean up any timers if they exist
         if (room.gameData && room.gameData.timer) {
           clearTimeout(room.gameData.timer)
         }
@@ -251,6 +258,7 @@ io.on('connection', (socket) => {
         room.guest = null
         room.players = room.players.filter(p => p.socketId !== socket.id)
         
+        // Create clean room update data
         const roomUpdateData = {
           id: room.id,
           code: room.code,
@@ -268,8 +276,10 @@ io.on('connection', (socket) => {
   })
 })
 
+// Add process handlers for graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, cleaning up...')
+  // Clean up all room timers
   for (const [roomCode, room] of rooms.entries()) {
     if (room.gameData && room.gameData.timer) {
       clearTimeout(room.gameData.timer)
@@ -281,6 +291,7 @@ process.on('SIGTERM', () => {
 
 process.on('SIGINT', () => {
   console.log('SIGINT received, cleaning up...')
+  // Clean up all room timers
   for (const [roomCode, room] of rooms.entries()) {
     if (room.gameData && room.gameData.timer) {
       clearTimeout(room.gameData.timer)

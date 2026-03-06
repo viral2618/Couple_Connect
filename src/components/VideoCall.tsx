@@ -85,30 +85,29 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
     setSocket(newSocket)
 
     newSocket.on('connect', () => {
-      newSocket.emit('join-video-room', { roomId, userId })
+      newSocket.emit('join-room', roomId)
     })
 
-    newSocket.on('video-room-joined', ({ otherUsers }) => {
-      if (otherUsers.length > 0 && stream) {
+    newSocket.on('user-joined', ({ userId: joinedUserId }) => {
+      if (joinedUserId !== socket?.id && stream) {
         const newPeer = createPeer(true, stream, newSocket)
         setPeer(newPeer)
       }
     })
 
-    newSocket.on('user-joined-video', () => {
-      if (stream && !peer) {
-        const newPeer = createPeer(false, stream, newSocket)
-        setPeer(newPeer)
-      }
-    })
-
     newSocket.on('signal', ({ signal, userId: senderId }) => {
-      if (senderId !== userId && peer && !peer.destroyed) {
-        peer.signal(signal)
+      if (senderId !== userId) {
+        if (!peer && stream) {
+          const newPeer = createPeer(false, stream, newSocket)
+          setPeer(newPeer)
+          newPeer.signal(signal)
+        } else if (peer && !peer.destroyed) {
+          peer.signal(signal)
+        }
       }
     })
 
-    newSocket.on('user-left-video', () => {
+    newSocket.on('user-left', () => {
       setIsConnected(false)
       if (peer && !peer.destroyed) {
         peer.destroy()
@@ -120,7 +119,7 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
       if (peer && !peer.destroyed) {
         peer.destroy()
       }
-      newSocket.emit('leave-video-room', { roomId, userId })
+      newSocket.emit('leave-room', { roomId, userId })
       newSocket.disconnect()
     }
   }, [stream, roomId, userId, createPeer, peer])
@@ -161,7 +160,7 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
   const endCall = () => {
     stream?.getTracks().forEach(track => track.stop())
     peer?.destroy()
-    socket?.emit('leave-video-room', { roomId, userId })
+    socket?.emit('leave-room', { roomId, userId })
     socket?.disconnect()
     onClose()
   }
