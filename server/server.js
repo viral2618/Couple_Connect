@@ -8,8 +8,17 @@ const path = require('path')
 // Import game server
 const GameServer = require('./game-engine/src/server')
 
-// Import mediasoup handlers
-const { initializeWorkers, setupMediasoupHandlers } = require('../mediasoup-server')
+// Try to import mediasoup handlers (optional)
+let setupMediasoupHandlers = null
+let initializeWorkers = null
+try {
+  const mediasoup = require('../mediasoup-server')
+  setupMediasoupHandlers = mediasoup.setupMediasoupHandlers
+  initializeWorkers = mediasoup.initializeWorkers
+  console.log('[Server] MediaSoup module loaded')
+} catch (err) {
+  console.log('[Server] MediaSoup not available, video calling disabled')
+}
 
 const prisma = new PrismaClient({
   errorFormat: 'pretty',
@@ -94,11 +103,13 @@ const io = new Server(server, {
 const rooms = new Map()
 const videoRooms = new Map()
 
-// Initialize MediaSoup workers
-initializeWorkers().catch(err => {
-  console.error('Failed to initialize MediaSoup:', err)
-  console.log('Video calling will not be available')
-})
+// Initialize MediaSoup workers if available
+if (initializeWorkers) {
+  initializeWorkers().catch(err => {
+    console.error('[Server] Failed to initialize MediaSoup:', err)
+    console.log('[Server] Video calling will not be available')
+  })
+}
 
 function generateRoomCode() {
   let code
@@ -122,8 +133,10 @@ io.on('connection', (socket) => {
   // Setup couples game handlers for this socket
   setupCouplesGameHandlers(io, socket, rooms)
 
-  // Setup mediasoup handlers for video calling
-  setupMediasoupHandlers(io, socket)
+  // Setup mediasoup handlers for video calling if available
+  if (setupMediasoupHandlers) {
+    setupMediasoupHandlers(io, socket)
+  }
 
   // Unified room management for both chat and video calls
   socket.on('join-room', (roomId) => {
