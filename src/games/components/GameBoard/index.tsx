@@ -183,6 +183,6 @@ export default function GamesPage() {
 
   console.log('✅ Loading game UI:', currentGameType);
 
-  // Use optimized game loader
-  return <GameLoader gameType={currentGameType} room={room} playerId={playerId} />;
+  // Use optimized game loader - only render if gameType is not null
+  return currentGameType ? <GameLoader gameType={currentGameType} room={room} playerId={playerId} /> : null;
 }
