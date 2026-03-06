@@ -3,7 +3,7 @@ const { parse } = require('url')
 const next = require('next')
 const { Server } = require('socket.io')
 const { PrismaClient } = require('@prisma/client')
-const { initializeWorkers, setupMediasoupHandlers } = require('./mediasoup-server')
+// const { initializeWorkers, setupMediasoupHandlers } = require('./mediasoup-server')
 
 const prisma = new PrismaClient({
   errorFormat: 'pretty',
@@ -45,15 +45,8 @@ process.on('SIGINT', () => {
 
 app.prepare().then(async () => {
   // Initialize MediaSoup workers
-  let mediasoupAvailable = false
-  try {
-    await initializeWorkers()
-    mediasoupAvailable = true
-    console.log('✓ MediaSoup workers initialized successfully')
-  } catch (error) {
-    console.error('✗ Failed to initialize MediaSoup workers:', error.message)
-    console.log('⚠ Video calling will not be available. App will continue without it.')
-  }
+  const mediasoupAvailable = false
+  console.log('⚠ MediaSoup disabled - using simple WebRTC instead')
   const server = createServer(async (req, res) => {
     try {
       const parsedUrl = parse(req.url, true)
@@ -110,10 +103,7 @@ app.prepare().then(async () => {
   io.on('connection', (socket) => {
     console.log('User connected:', socket.id)
 
-    // Setup MediaSoup handlers for video calling (only if available)
-    if (mediasoupAvailable) {
-      setupMediasoupHandlers(io, socket)
-    }
+    // MediaSoup handlers disabled
 
     // Enhanced video calling system for 2-way calls only
     socket.on('join-video-room', ({ roomId, userId }) => {
