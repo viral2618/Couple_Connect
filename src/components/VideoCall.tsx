@@ -47,9 +47,13 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
         console.log('[VideoCall] Socket connected:', socketRef.current?.id)
         console.log('[VideoCall] Joining room:', roomId)
         
-        // CRITICAL: Join the socket room first
+        // CRITICAL: Join the socket room first and wait for confirmation
         socketRef.current?.emit('join-video-room', { roomId, userId })
-        
+      })
+
+      // Wait for room join confirmation before starting media
+      socketRef.current.on('video-room-joined', async ({ roomId: joinedRoomId, otherUsers }) => {
+        console.log('[VideoCall] Room joined successfully:', joinedRoomId, 'Other users:', otherUsers)
         try {
           await joinRoom()
         } catch (err: any) {
@@ -75,6 +79,11 @@ export default function VideoCall({ roomId, userId, onClose }: VideoCallProps) {
 
       socketRef.current.on('connect_error', (err) => {
         setError('Connection error: ' + err.message)
+      })
+
+      socketRef.current.on('video-error', ({ message }) => {
+        console.error('[VideoCall] Video error:', message)
+        setError(message)
       })
     } catch (err: any) {
       setError(err.message)

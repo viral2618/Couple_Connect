@@ -53,6 +53,11 @@ export default function EnhancedVideoCall({ roomId, userId, onClose }: EnhancedV
 
       socketRef.current.on('connect', async () => {
         socketRef.current?.emit('join-video-room', { roomId, userId })
+      })
+
+      // Wait for room join confirmation
+      socketRef.current.on('video-room-joined', async ({ roomId: joinedRoomId, otherUsers }) => {
+        console.log('[VideoCall] Room joined successfully:', joinedRoomId, 'Other users:', otherUsers)
         try {
           await joinRoom()
         } catch (err: any) {
@@ -77,6 +82,11 @@ export default function EnhancedVideoCall({ roomId, userId, onClose }: EnhancedV
       socketRef.current.on('connect_error', (err) => {
         setError('Connection error: ' + err.message)
         setConnectionQuality('poor')
+      })
+
+      socketRef.current.on('video-error', ({ message }) => {
+        console.error('[VideoCall] Video error:', message)
+        setError(message)
       })
     } catch (err: any) {
       setError(err.message)

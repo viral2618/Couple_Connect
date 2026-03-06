@@ -50,9 +50,18 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
         socketRef.current?.emit('join-video-room', { roomId, userId })
       })
 
-      socketRef.current.on('user-joined', async ({ userId: remoteUserId }) => {
+      socketRef.current.on('video-room-joined', ({ otherUsers }) => {
+        console.log('[WebRTC] Room joined, other users:', otherUsers)
+        // If there's another user, create offer after a small delay
+        if (otherUsers && otherUsers.length > 0) {
+          setTimeout(() => createOffer(), 500)
+        }
+      })
+
+      socketRef.current.on('user-joined-video', async ({ userId: remoteUserId }) => {
         console.log('[WebRTC] User joined:', remoteUserId)
-        await createOffer()
+        // Small delay to ensure both peers are ready
+        setTimeout(() => createOffer(), 500)
       })
 
       socketRef.current.on('offer', async ({ offer, userId: remoteUserId }) => {
