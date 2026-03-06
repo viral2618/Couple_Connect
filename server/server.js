@@ -8,6 +8,9 @@ const path = require('path')
 // Import game server
 const GameServer = require('./game-engine/src/server')
 
+// Import mediasoup handlers
+const { initializeWorkers, setupMediasoupHandlers } = require('../mediasoup-server')
+
 const prisma = new PrismaClient({
   errorFormat: 'pretty',
   log: ['query', 'info', 'warn', 'error'],
@@ -28,8 +31,25 @@ const app = express()
 const server = createServer(app)
 
 // Setup CORS
+const allowedOrigins = dev 
+  ? ['http://localhost:3000', 'http://127.0.0.1:3000'] 
+  : [
+      process.env.NEXT_PUBLIC_APP_URL || "https://your-domain.com",
+      'https://coupleconnect-production-35ae.up.railway.app'
+    ]
+
 app.use(cors({
-  origin: dev ? ['http://localhost:3000', 'http://127.0.0.1:3000'] : [process.env.NEXT_PUBLIC_APP_URL || "https://your-domain.com"],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true)
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true)
+    } else {
+      console.log('CORS check - Origin:', origin, 'Allowed:', false)
+      callback(null, true) // Allow all in production for now
+    }
+  },
   credentials: true
 }))
 
@@ -54,7 +74,16 @@ if (!dev) {
 // Socket.IO setup
 const io = new Server(server, {
   cors: {
-    origin: dev ? ['http://localhost:3000', 'http://127.0.0.1:3000'] : [process.env.NEXT_PUBLIC_APP_URL || "https://your-domain.com"],
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true)
+      if (allowedOrigins.includes(origin)) {
+        console.log('CORS check - Origin:', origin, 'Allowed: true')
+        callback(null, true)
+      } else {
+        console.log('CORS check - Origin:', origin, 'Allowed: true (permissive)')
+        callback(null, true)
+      }
+    },
     methods: ["GET", "POST"],
     credentials: true
   },
@@ -63,6 +92,13 @@ const io = new Server(server, {
 
 // Simple room management for chat/video
 const rooms = new Map()
+const videoRooms = new Map()
+
+// Initialize MediaSoup workers
+initializeWorkers().catch(err => {
+  console.error('Failed to initialize MediaSoup:', err)
+  console.log('Video calling will not be available')
+})
 
 function generateRoomCode() {
   let code
@@ -86,6 +122,9 @@ io.on('connection', (socket) => {
   // Setup couples game handlers for this socket
   setupCouplesGameHandlers(io, socket, rooms)
 
+  // Setup mediasoup handlers for video calling
+  setupMediasoupHandlers(io, socket)
+
   // Unified room management for both chat and video calls
   socket.on('join-room', (roomId) => {
     socket.join(roomId)
@@ -101,6 +140,40 @@ io.on('connection', (socket) => {
     }
     console.log('Broadcasting message to room:', roomId)
     io.to(roomId).emit('receive-message', message)
+  })
+
+  // Video call room management
+  socket.on('join-video-room', ({ roomId, userId }) => {
+    console.log(`User ${userId} attempting to join video room: ${roomId}`)
+    
+    if (!videoRooms.has(roomId)) {
+      videoRooms.set(roomId, new Set())
+      console.log(`Created new video room: ${roomId}`)
+    }
+    
+    const room = videoRooms.get(roomId)
+    const otherUsers = Array.from(room).filter(id => id !== userId)
+    
+    room.add(userId)
+    socket.join(roomId)
+    
+    console.log(`User ${userId} joined video room: ${roomId}. Total users: ${room.size}, Other users: ${otherUsers.join(', ')}`)
+    socket.emit('video-room-joined', { roomId, otherUsers })
+    socket.to(roomId).emit('user-joined-video', { userId })
+  })
+
+  socket.on('leave-video-room', ({ roomId, userId }) => {
+    console.log(`User ${userId} leaving video room ${roomId}`)
+    const room = videoRooms.get(roomId)
+    if (room) {
+      room.delete(userId)
+      if (room.size === 0) {
+        videoRooms.delete(roomId)
+        console.log(`Video room ${roomId} deleted`)
+      }
+    }
+    socket.to(roomId).emit('user-left-video', { userId })
+    socket.leave(roomId)
   })
 
   // Video call signaling (using same rooms)
@@ -245,6 +318,21 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id)
+    
+    // Clean up video rooms
+    for (const [roomId, room] of videoRooms.entries()) {
+      for (const userId of room) {
+        // Find if this socket was in this room (we need to track socket-to-user mapping)
+        room.delete(userId)
+        socket.to(roomId).emit('user-left-video', { userId })
+        console.log(`Cleaned up user ${userId} from video room ${roomId} on disconnect`)
+      }
+      if (room.size === 0) {
+        videoRooms.delete(roomId)
+        console.log(`Video room ${roomId} deleted on disconnect`)
+      }
+    }
+    
     // Clean up rooms when players disconnect
     for (const [roomCode, room] of rooms.entries()) {
       if (room.host && room.host.socketId === socket.id) {

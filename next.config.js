@@ -3,6 +3,7 @@ const nextConfig = {
   // Production optimizations
   experimental: {
     optimizePackageImports: ['@/games', '@/components'],
+    serverComponentsExternalPackages: ['socket.io', 'mediasoup'],
   },
   
   // Compiler optimizations
@@ -36,6 +37,11 @@ const nextConfig = {
   
   // Production webpack optimizations
   webpack: (config, { dev, isServer }) => {
+    // Fix for socket.io ESM issues
+    if (isServer) {
+      config.externals = [...(config.externals || []), 'supports-color'];
+    }
+    
     if (!dev && !isServer) {
       // Optimize for production
       config.optimization = {

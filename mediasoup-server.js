@@ -128,12 +128,21 @@ function setupMediasoupHandlers(io, socket) {
       // Get announced IP from environment or detect it
       let announcedIp = process.env.MEDIASOUP_ANNOUNCED_IP
       
-      // If not set or is 0.0.0.0, try to detect or warn
-      if (!announcedIp || announcedIp === '0.0.0.0') {
-        console.warn('[MediaSoup] WARNING: MEDIASOUP_ANNOUNCED_IP not set properly!')
-        console.warn('[MediaSoup] Video calling may not work. Set your server public IP in .env.production')
-        announcedIp = undefined // Let mediasoup try to detect
+      // If Railway variable format, extract the domain
+      if (announcedIp && announcedIp.includes('RAILWAY_PUBLIC_DOMAIN')) {
+        announcedIp = process.env.RAILWAY_PUBLIC_DOMAIN || process.env.RAILWAY_STATIC_URL
       }
+      
+      // If not set or is 0.0.0.0, use Railway's domain or undefined
+      if (!announcedIp || announcedIp === '0.0.0.0') {
+        announcedIp = process.env.RAILWAY_PUBLIC_DOMAIN || process.env.RAILWAY_STATIC_URL
+        if (!announcedIp) {
+          console.warn('[MediaSoup] WARNING: No public IP/domain configured!')
+          console.warn('[MediaSoup] Set MEDIASOUP_ANNOUNCED_IP in Railway environment variables')
+        }
+      }
+      
+      console.log(`[MediaSoup] Using announcedIp: ${announcedIp || 'auto-detect'}`)
 
       const webRtcTransportOptions = {
         listenIps: [
@@ -142,15 +151,15 @@ function setupMediasoupHandlers(io, socket) {
             announcedIp: announcedIp
           }
         ],
-        enableUdp: true,
+        enableUdp: false, // Railway doesn't support UDP
         enableTcp: true,
-        preferUdp: true,
-        initialAvailableOutgoingBitrate: 1000000,
-        minimumAvailableOutgoingBitrate: 600000,
+        preferUdp: false,
+        initialAvailableOutgoingBitrate: 600000,
+        minimumAvailableOutgoingBitrate: 300000,
         maxSctpMessageSize: 262144
       }
 
-      console.log(`[MediaSoup] Creating transport with announcedIp: ${announcedIp || 'auto-detect'}`)
+      console.log(`[MediaSoup] Creating ${direction} transport with announcedIp: ${announcedIp || 'auto-detect'}`)
       const transport = await room.router.createWebRtcTransport(webRtcTransportOptions)
 
       if (!room.peers.has(socket.id)) {
@@ -198,6 +207,7 @@ function setupMediasoupHandlers(io, socket) {
       const producer = await transport.produce({ kind, rtpParameters })
       peer.producers.set(producer.id, producer)
 
+      console.log(`[MediaSoup] Producer created: ${kind} in room ${roomId}`)
       socket.to(roomId).emit('newProducer', { producerId: producer.id, peerId: socket.id, kind })
 
       callback({ id: producer.id })

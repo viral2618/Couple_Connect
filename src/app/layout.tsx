@@ -1,15 +1,14 @@
 import './globals.css'
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { AuthProvider } from '@/contexts/AuthContext'
 import SocketInitializer from '@/components/SocketInitializer'
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
   title: '💕 Couple Connect - Stay Connected Forever',
   description: 'The ultimate long-distance relationship app with real-time chat and video calls. Stay connected with your partner no matter the distance.',
   keywords: 'couple app, long distance relationship, video chat, relationship app',
   authors: [{ name: 'Couple Connect Team' }],
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no',
-  themeColor: '#ec4899',
   openGraph: {
     title: '💕 Couple Connect - Stay Connected Forever',
     description: 'The ultimate long-distance relationship app with real-time chat and video calls.',
@@ -25,6 +24,14 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: '#ec4899',
 }
 
 export default function RootLayout({
