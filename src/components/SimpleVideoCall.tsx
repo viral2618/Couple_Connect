@@ -20,6 +20,8 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
+  const isInitiatorRef = useRef(false)
+  const makingOfferRef = useRef(false)
 
   useEffect(() => {
     initCall()
@@ -52,16 +54,18 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
 
       socketRef.current.on('video-room-joined', ({ otherUsers }) => {
         console.log('[WebRTC] Room joined, other users:', otherUsers)
-        // If there's another user, create offer after a small delay
         if (otherUsers && otherUsers.length > 0) {
-          setTimeout(() => createOffer(), 500)
+          isInitiatorRef.current = true
+          setTimeout(() => createOffer(), 1000)
         }
       })
 
       socketRef.current.on('user-joined-video', async ({ userId: remoteUserId }) => {
         console.log('[WebRTC] User joined:', remoteUserId)
-        // Small delay to ensure both peers are ready
-        setTimeout(() => createOffer(), 500)
+        if (!isInitiatorRef.current) {
+          isInitiatorRef.current = true
+          setTimeout(() => createOffer(), 1000)
+        }
       })
 
       socketRef.current.on('offer', async ({ offer, userId: remoteUserId }) => {
@@ -95,6 +99,11 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
   }
 
   const createPeerConnection = () => {
+    if (peerConnectionRef.current) {
+      console.log('[WebRTC] Peer connection already exists')
+      return peerConnectionRef.current
+    }
+
     const config: RTCConfiguration = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -141,6 +150,9 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
 
   const createOffer = async () => {
     try {
+      if (makingOfferRef.current) return
+      makingOfferRef.current = true
+
       const pc = createPeerConnection()
       const offer = await pc.createOffer()
       await pc.setLocalDescription(offer)
@@ -149,8 +161,10 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
         roomId,
         offer: pc.localDescription
       })
+      makingOfferRef.current = false
     } catch (err: any) {
       console.error('[WebRTC] Create offer error:', err)
+      makingOfferRef.current = false
       setError(err.message)
     }
   }
@@ -158,8 +172,15 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
   const handleOffer = async (offer: RTCSessionDescriptionInit) => {
     try {
       const pc = createPeerConnection()
-      await pc.setRemoteDescription(new RTCSessionDescription(offer))
       
+      if (pc.signalingState !== 'stable') {
+        console.log('[WebRTC] Signaling state not stable, waiting...')
+        await Promise.all([
+          pc.signalingState === 'have-local-offer' && pc.setLocalDescription({ type: 'rollback' })
+        ])
+      }
+
+      await pc.setRemoteDescription(new RTCSessionDescription(offer))
       const answer = await pc.createAnswer()
       await pc.setLocalDescription(answer)
 
@@ -175,9 +196,15 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
 
   const handleAnswer = async (answer: RTCSessionDescriptionInit) => {
     try {
-      if (peerConnectionRef.current) {
-        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer))
+      const pc = peerConnectionRef.current
+      if (!pc) return
+
+      if (pc.signalingState === 'stable') {
+        console.log('[WebRTC] Already stable, ignoring answer')
+        return
       }
+
+      await pc.setRemoteDescription(new RTCSessionDescription(answer))
     } catch (err: any) {
       console.error('[WebRTC] Handle answer error:', err)
       setError(err.message)
@@ -186,8 +213,9 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
 
   const handleIceCandidate = async (candidate: RTCIceCandidateInit) => {
     try {
-      if (peerConnectionRef.current) {
-        await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate))
+      const pc = peerConnectionRef.current
+      if (pc && pc.remoteDescription) {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate))
       }
     } catch (err: any) {
       console.error('[WebRTC] Handle ICE candidate error:', err)
