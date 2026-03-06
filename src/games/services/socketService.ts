@@ -74,7 +74,12 @@ class SocketService {
 
   // Game events
   selectGame(code: string, gameType: GameType): void {
-    this.socket?.emit('game:select-game', { code, gameType });
+    console.log('🎯 Selecting game:', gameType, 'for room:', code);
+    if (this.socket?.connected) {
+      this.socket.emit('game:select-game', { code, gameType });
+    } else {
+      console.warn('⚠️ Socket not connected, game selection may not sync');
+    }
   }
 
   requestQuestion(code: string, category: QuestionCategory): void {

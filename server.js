@@ -262,13 +262,20 @@ app.prepare().then(async () => {
     });
 
     socket.on('game:select-game', ({ code, gameType }) => {
+      console.log('🎯 Game selection received:', gameType, 'for room:', code);
       const room = gameRooms.get(code);
-      if (!room) return;
+      if (!room) {
+        console.log('❌ Room not found for game selection:', code);
+        socket.emit('game:error', { message: 'Room not found' });
+        return;
+      }
       room.gameType = gameType;
       room.gameState.status = 'playing';
       room.gameState.currentRound = 1;
+      
+      console.log('✅ Broadcasting game selection to room:', code, 'Players:', room.players.length);
       io.to(`game:${code}`).emit('game:room-updated', room);
-      console.log(`Game ${gameType} selected for room ${code}`);
+      console.log(`🎮 Game ${gameType} selected for room ${code}`);
     });
 
     socket.on('game:request-question', async ({ code, category }) => {

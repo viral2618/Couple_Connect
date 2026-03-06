@@ -38,12 +38,12 @@ export default function GamesPage() {
 
   // Sync selectedGameType with room.gameType when it updates
   useEffect(() => {
-    if (room?.gameType) {
+    if (room?.gameType && room.gameType !== selectedGameType) {
       console.log('🔄 Game type received from room:', room.gameType);
       setSelectedGameType(room.gameType);
       setShowGameSelector(false);
     }
-  }, [room?.gameType]);
+  }, [room?.gameType, selectedGameType]);
 
   useEffect(() => {
     if (room) {
@@ -170,7 +170,7 @@ export default function GamesPage() {
   });
 
   // Show waiting room if not enough players or no game selected
-  if (room.players.length < 2 || !currentGameType) {
+  if (room.players.length < 2 || (!currentGameType && !showGameSelector)) {
     console.log('⚠️ Redirecting to waiting room - Players:', room.players.length, 'GameType:', currentGameType);
     return (
       <WaitingRoom

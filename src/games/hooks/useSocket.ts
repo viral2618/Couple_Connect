@@ -40,10 +40,9 @@ export const useGameState = (roomCode?: string) => {
       playerNames: updatedRoom.players.map(p => p.name)
     });
     
-    if (JSON.stringify(roomRef.current) !== JSON.stringify(updatedRoom)) {
-      roomRef.current = updatedRoom;
-      setRoom(updatedRoom);
-    }
+    // Always update room state when received from server
+    roomRef.current = updatedRoom;
+    setRoom(updatedRoom);
     
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
