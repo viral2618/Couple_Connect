@@ -224,16 +224,15 @@ export default function CoupleQuiz({ room, playerId }: CoupleQuizProps) {
                 )}
 
                 <div className="bg-gray-800 rounded-xl p-4 border border-yellow-500/30">
-                  <h3 className="text-yellow-400 font-semibold mb-3 text-center">Who Knows Better?</h3>
+                  <h3 className="text-yellow-400 font-semibold mb-3 text-center">Scores Updated!</h3>
                   <div className="grid grid-cols-2 gap-3">
                     {room.players.map((player) => (
-                      <button
+                      <div
                         key={player.id}
-                        onClick={() => handleVoteWinner(player.id)}
-                        className="bg-gray-700 hover:bg-pink-500 text-white py-3 rounded-lg font-semibold transition"
+                        className="bg-gray-700 text-white py-3 rounded-lg font-semibold text-center"
                       >
-                        {player.name}
-                      </button>
+                        {player.name}: {scores[player.id] || 0} pts
+                      </div>
                     ))}
                   </div>
                 </div>

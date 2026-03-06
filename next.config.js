@@ -2,7 +2,6 @@
 const nextConfig = {
   // Production optimizations
   experimental: {
-    optimizeCss: true,
     optimizePackageImports: ['@/games', '@/components'],
   },
   

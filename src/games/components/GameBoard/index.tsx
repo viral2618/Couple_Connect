@@ -159,8 +159,6 @@ export default function GamesPage() {
     return <GameSelector onSelectGame={handleSelectGame} />;
   }
 
-import GameLoader from '@/games/components/GameLoader';
-
   // Use selectedGameType if room.gameType is not set yet
   const currentGameType = room.gameType || selectedGameType;
 
