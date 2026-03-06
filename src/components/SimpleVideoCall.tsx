@@ -55,16 +55,26 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
       socketRef.current.on('video-room-joined', ({ otherUsers }) => {
         console.log('[WebRTC] Room joined, other users:', otherUsers)
         if (otherUsers && otherUsers.length > 0) {
-          isInitiatorRef.current = true
-          setTimeout(() => createOffer(), 1000)
+          const shouldInitiate = userId > otherUsers[0]
+          if (shouldInitiate) {
+            isInitiatorRef.current = true
+            console.log('[WebRTC] I am initiator, creating offer')
+            setTimeout(() => createOffer(), 1500)
+          } else {
+            console.log('[WebRTC] Waiting for offer from peer')
+          }
         }
       })
 
       socketRef.current.on('user-joined-video', async ({ userId: remoteUserId }) => {
         console.log('[WebRTC] User joined:', remoteUserId)
-        if (!isInitiatorRef.current) {
+        const shouldInitiate = userId > remoteUserId
+        if (shouldInitiate && !isInitiatorRef.current) {
           isInitiatorRef.current = true
-          setTimeout(() => createOffer(), 1000)
+          console.log('[WebRTC] I am initiator, creating offer')
+          setTimeout(() => createOffer(), 1500)
+        } else {
+          console.log('[WebRTC] Waiting for offer from peer')
         }
       })
 
