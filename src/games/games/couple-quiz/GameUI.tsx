@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Room, QuestionCategory, Question } from '@/games/types/gameTypes';
-import { socketService } from '@/games/services/socketService';
+import { aiQuestionService } from '@/games/services/aiQuestionService';
 
 interface CoupleQuizProps {
   room: Room;
@@ -20,7 +20,10 @@ export default function CoupleQuiz({ room, playerId }: CoupleQuizProps) {
   const [questionStartTime, setQuestionStartTime] = useState<number>(0);
   const [winner, setWinner] = useState<string | null>(null);
   const [gameStarted, setGameStarted] = useState(false);
-  const isOwner = room.players[0]?.id === playerId;
+  const [loading, setLoading] = useState(false);
+  
+  const isOwner = useMemo(() => room.players[0]?.id === playerId, [room.players, playerId]);
+  const partner = useMemo(() => room.players.find(p => p.id !== playerId), [room.players, playerId]);
 
   const categories: { value: QuestionCategory; label: string; emoji: string }[] = [
     { value: 'seductive', label: 'Seductive', emoji: '🔥' },
@@ -30,46 +33,17 @@ export default function CoupleQuiz({ room, playerId }: CoupleQuizProps) {
     { value: 'deep', label: 'Deep', emoji: '💭' }
   ];
 
-  const handleStartGame = () => {
+  const handleStartGame = useCallback(() => {
     setGameStarted(true);
     handleRequestQuestion();
-  };
+  }, []);
 
-  useEffect(() => {
-    // Check if both answered and determine winner
-    if (myAnswer !== null && partnerAnswer !== null && myAnswerTime !== null && partnerAnswerTime !== null) {
-      const myTime = myAnswerTime - questionStartTime;
-      const partnerTime = partnerAnswerTime - questionStartTime;
-      
-      // Both got same answer - fastest wins
-      if (myAnswer === partnerAnswer) {
-        const fastestPlayer = myTime < partnerTime ? playerId : room.players.find(p => p.id !== playerId)?.id;
-        setWinner(fastestPlayer || null);
-        
-        setScores(prev => {
-          const newScores = { ...prev };
-          if (fastestPlayer) {
-            newScores[fastestPlayer] = (newScores[fastestPlayer] || 0) + 10;
-          }
-          return newScores;
-        });
-      }
-    }
-  }, [myAnswer, partnerAnswer, myAnswerTime, partnerAnswerTime, questionStartTime, room.players, playerId]);
-
-  const handleRequestQuestion = async () => {
+  const handleRequestQuestion = useCallback(async () => {
+    setLoading(true);
     try {
-      const response = await fetch('/api/games/question', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          gameType: 'couple-quiz',
-          category,
-          playerNames: room.players.map(p => p.name)
-        })
-      });
+      // Use instant question generation instead of API call
+      const question = aiQuestionService.getInstantQuestion('couple-quiz', category);
       
-      const question = await response.json();
       setCurrentQuestion({
         id: Date.now().toString(),
         text: question.question,
@@ -85,33 +59,59 @@ export default function CoupleQuiz({ room, playerId }: CoupleQuizProps) {
       setWinner(null);
     } catch (error) {
       console.error('Failed to get question:', error);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [category]);
 
-  const handleAnswer = (answerIndex: number) => {
+  const handleAnswer = useCallback((answerIndex: number) => {
     setMyAnswer(answerIndex);
     setMyAnswerTime(Date.now());
     
-    // Simulate partner answer after 2 seconds
+    // Simulate partner answer faster
     setTimeout(() => {
       const randomAnswer = Math.floor(Math.random() * (currentQuestion?.options?.length || 4));
       setPartnerAnswer(randomAnswer);
       setPartnerAnswerTime(Date.now());
-    }, 2000);
-  };
+    }, 1000); // Reduced from 2000ms
+  }, [currentQuestion]);
 
-  const handleNextRound = () => {
+  const handleNextRound = useCallback(() => {
     handleRequestQuestion();
     setMyAnswer(null);
     setPartnerAnswer(null);
     setMyAnswerTime(null);
     setPartnerAnswerTime(null);
     setWinner(null);
-  };
+  }, [handleRequestQuestion]);
 
-  const handleVoteWinner = (winnerId: string) => {
-    socketService.getSocket()?.emit('game:vote-winner', { code: room.code, winnerId, voterId: playerId });
-  };
+  // Optimized winner calculation
+  useEffect(() => {
+    if (myAnswer !== null && partnerAnswer !== null && myAnswerTime !== null && partnerAnswerTime !== null) {
+      const myTime = myAnswerTime - questionStartTime;
+      const partnerTime = partnerAnswerTime - questionStartTime;
+      
+      if (myAnswer === partnerAnswer) {
+        const fastestPlayer = myTime < partnerTime ? playerId : partner?.id;
+        setWinner(fastestPlayer || null);
+        
+        setScores(prev => {
+          const newScores = { ...prev };
+          if (fastestPlayer) {
+            newScores[fastestPlayer] = (newScores[fastestPlayer] || 0) + 10;
+          }
+          return newScores;
+        });
+      }
+    }
+  }, [myAnswer, partnerAnswer, myAnswerTime, partnerAnswerTime, questionStartTime, playerId, partner]);
+
+  // Preload questions for better performance
+  useEffect(() => {
+    if (gameStarted) {
+      aiQuestionService.preloadQuestions('couple-quiz', category, 3);
+    }
+  }, [gameStarted, category]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-600 via-pink-500 to-rose-500 flex items-center justify-center p-4">
@@ -161,16 +161,23 @@ export default function CoupleQuiz({ room, playerId }: CoupleQuizProps) {
           </>
         )}
 
-        {gameStarted && !currentQuestion && (
+        {gameStarted && loading && (
           <div className="bg-gray-800 rounded-xl p-6 border border-pink-500/30 text-center">
             <div className="animate-pulse">
-              <div className="text-4xl mb-4">🎲</div>
-              <p className="text-white text-lg">Loading your question...</p>
+              <div className="text-4xl mb-4">⚡</div>
+              <p className="text-white text-lg">Generating question...</p>
             </div>
           </div>
         )}
 
-        {gameStarted && currentQuestion && myAnswer === null && (
+        {gameStarted && !loading && !currentQuestion && (
+          <div className="bg-gray-800 rounded-xl p-6 border border-pink-500/30 text-center">
+            <div className="text-4xl mb-4">🎲</div>
+            <p className="text-white text-lg">Ready for your question!</p>
+          </div>
+        )}
+
+        {gameStarted && !loading && currentQuestion && myAnswer === null && (
           <div className="space-y-6">
             <div className="bg-gray-800 rounded-xl p-6 border border-pink-500/30">
               <p className="text-white text-xl font-semibold text-center mb-6">
@@ -201,7 +208,7 @@ export default function CoupleQuiz({ room, playerId }: CoupleQuizProps) {
             {partnerAnswer !== null && (
               <>
                 <div className="bg-gray-800 rounded-xl p-6 border border-purple-500/30">
-                  <h3 className="text-purple-400 font-semibold mb-3">Partner's Answer:</h3>
+                  <h3 className="text-purple-400 font-semibold mb-3">{partner?.name}'s Answer:</h3>
                   <p className="text-white">{currentQuestion?.options?.[partnerAnswer]}</p>
                 </div>
 
@@ -242,7 +249,7 @@ export default function CoupleQuiz({ room, playerId }: CoupleQuizProps) {
 
             {partnerAnswer === null && (
               <div className="bg-blue-500/10 text-white px-4 py-3 rounded-xl text-center border border-blue-500/30">
-                Waiting for partner's answer...
+                Waiting for {partner?.name}'s answer...
               </div>
             )}
           </div>

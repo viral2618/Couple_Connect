@@ -5,12 +5,18 @@
   "scripts": {
     "dev": "node server.js",
     "build": "prisma generate && next build",
+    "build:analyze": "ANALYZE=true npm run build",
+    "build:prod": "NODE_ENV=production npm run build",
     "start": "NODE_ENV=production node server.js",
     "start:windows": "set NODE_ENV=production && node server.js",
     "postinstall": "prisma generate",
     "setup-search": "node setup-custom-search.js",
     "check-video": "node check-video-setup.js",
-    "setup-video": "bash setup-video-production.sh"
+    "setup-video": "bash setup-video-production.sh",
+    "deploy:prod": "bash deploy-production.sh",
+    "monitor": "bash monitor-performance.sh",
+    "optimize": "npm run build:prod && npm run deploy:prod",
+    "preload-games": "node preload-game-content.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.1",

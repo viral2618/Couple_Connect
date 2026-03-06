@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { socketService } from '../services/socketService';
 import { Room } from '../types/gameTypes';
 
@@ -30,9 +30,40 @@ export const useGameState = (roomCode?: string) => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const roomRef = useRef<Room | null>(null);
+
+  const handleRoomUpdate = useCallback((updatedRoom: Room) => {
+    console.log('✅ Room updated received:', {
+      code: updatedRoom.code,
+      players: updatedRoom.players.length,
+      gameType: updatedRoom.gameType,
+      playerNames: updatedRoom.players.map(p => p.name)
+    });
+    
+    if (JSON.stringify(roomRef.current) !== JSON.stringify(updatedRoom)) {
+      roomRef.current = updatedRoom;
+      setRoom(updatedRoom);
+    }
+    
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    setLoading(false);
+    setError(null);
+  }, []);
+
+  const handleError = useCallback((err: { message: string }) => {
+    console.error('❌ Game error received:', err);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    setError(err.message);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    // Ensure socket is connected first
     const socket = socketService.getSocket();
     if (!socket) {
       console.error('❌ Socket not initialized!');
@@ -40,32 +71,6 @@ export const useGameState = (roomCode?: string) => {
     }
 
     console.log('🔌 Setting up game listeners on socket:', socket.id);
-
-    const handleRoomUpdate = (updatedRoom: Room) => {
-      console.log('✅ Room updated received:', {
-        code: updatedRoom.code,
-        players: updatedRoom.players.length,
-        gameType: updatedRoom.gameType,
-        playerNames: updatedRoom.players.map(p => p.name)
-      });
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-      setRoom(updatedRoom);
-      setLoading(false);
-      setError(null);
-    };
-
-    const handleError = (err: { message: string }) => {
-      console.error('❌ Game error received:', err);
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-      setError(err.message);
-      setLoading(false);
-    };
 
     socket.on('game:room-updated', handleRoomUpdate);
     socket.on('game:error', handleError);
@@ -78,9 +83,9 @@ export const useGameState = (roomCode?: string) => {
       socket.off('game:error', handleError);
       console.log('🧹 Cleaned up game listeners');
     };
-  }, []);
+  }, [handleRoomUpdate, handleError]);
 
-  const createRoom = (playerId: string, playerName: string) => {
+  const createRoom = useCallback((playerId: string, playerName: string) => {
     console.log('🎲 Creating room for:', playerName);
     setLoading(true);
     setError(null);
@@ -105,13 +110,14 @@ export const useGameState = (roomCode?: string) => {
         createdAt: Date.now(),
         maxPlayers: 2
       };
+      roomRef.current = newRoom;
       setRoom(newRoom);
       setLoading(false);
       timeoutRef.current = null;
-    }, 2000);
-  };
+    }, 800);
+  }, []);
 
-  const joinRoom = (code: string, playerId: string, playerName: string) => {
+  const joinRoom = useCallback((code: string, playerId: string, playerName: string) => {
     console.log('🚪 Joining room:', code);
     setLoading(true);
     setError(null);
@@ -139,16 +145,18 @@ export const useGameState = (roomCode?: string) => {
         createdAt: Date.now(),
         maxPlayers: 2
       };
+      roomRef.current = joinedRoom;
       setRoom(joinedRoom);
       setLoading(false);
       timeoutRef.current = null;
-    }, 2000);
-  };
+    }, 800);
+  }, []);
 
-  const leaveRoom = (code: string, playerId: string) => {
+  const leaveRoom = useCallback((code: string, playerId: string) => {
     socketService.leaveRoom(code, playerId);
+    roomRef.current = null;
     setRoom(null);
-  };
+  }, []);
 
   return {
     room,

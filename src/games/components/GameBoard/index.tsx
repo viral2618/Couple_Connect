@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSocket, useGameState } from '@/games/hooks';
 import GameLobby from '@/games/components/GameLobby';
 import WaitingRoom from '@/games/components/WaitingRoom';
 import GameSelector from '@/games/components/GameSelector';
-import IntimateConfessions from '@/games/games/intimate-confessions/GameUI';
+import GameLoader from '@/games/components/GameLoader';
 import { GameType } from '@/games/types/gameTypes';
 import { socketService } from '@/games/services/socketService';
 
@@ -65,26 +65,26 @@ export default function GamesPage() {
     };
   }, [roomCode, playerId]);
 
-  const handleNameSubmit = (e: React.FormEvent) => {
+  const handleNameSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     if (playerName.trim()) {
       localStorage.setItem('playerName', playerName.trim());
       setHasEnteredName(true);
     }
-  };
+  }, [playerName]);
 
-  const handleRoomJoined = (code: string) => {
+  const handleRoomJoined = useCallback((code: string) => {
     setRoomCode(code);
-  };
+  }, []);
 
-  const handleSelectGame = (gameType: GameType) => {
+  const handleSelectGame = useCallback((gameType: GameType) => {
     console.log('🎯 Selecting game:', gameType, 'Room code:', roomCode);
     setSelectedGameType(gameType);
     if (roomCode) {
       socketService.selectGame(roomCode, gameType);
       setShowGameSelector(false);
     }
-  };
+  }, [roomCode]);
 
   if (!hasEnteredName) {
     return (
@@ -159,6 +159,8 @@ export default function GamesPage() {
     return <GameSelector onSelectGame={handleSelectGame} />;
   }
 
+import GameLoader from '@/games/components/GameLoader';
+
   // Use selectedGameType if room.gameType is not set yet
   const currentGameType = room.gameType || selectedGameType;
 
@@ -183,34 +185,6 @@ export default function GamesPage() {
 
   console.log('✅ Loading game UI:', currentGameType);
 
-  // Game is selected and players are ready - show the game
-  if (currentGameType === 'intimate-confessions') {
-    return <IntimateConfessions room={room} playerId={playerId} />;
-  }
-
-  if (currentGameType === 'truth-or-dare') {
-    const TruthOrDare = require('@/games/games/truth-or-dare/GameUI').default;
-    return <TruthOrDare room={room} playerId={playerId} />;
-  }
-
-  if (currentGameType === 'would-you-rather') {
-    const WouldYouRather = require('@/games/games/would-you-rather/GameUI').default;
-    return <WouldYouRather room={room} playerId={playerId} />;
-  }
-
-  if (currentGameType === 'couple-quiz') {
-    const CoupleQuiz = require('@/games/games/couple-quiz/GameUI').default;
-    return <CoupleQuiz room={room} playerId={playerId} />;
-  }
-
-  if (currentGameType === 'rapid-questions') {
-    const RapidQuestions = require('@/games/games/rapid-questions/GameUI').default;
-    return <RapidQuestions room={room} playerId={playerId} />;
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-500 via-purple-500 to-indigo-600 flex items-center justify-center">
-      <div className="text-white text-xl">Game starting...</div>
-    </div>
-  );
+  // Use optimized game loader
+  return <GameLoader gameType={currentGameType} room={room} playerId={playerId} />;
 }

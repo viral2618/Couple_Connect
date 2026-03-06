@@ -39,67 +39,74 @@ const SEDUCTIVE_PROMPTS = {
 };
 
 export class AIQuestionService {
-  private baseUrl: string = 'https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2';
+  private cache = new Map<string, AIQuestionResponse>();
+  private fallbackPool = new Map<string, AIQuestionResponse[]>();
 
-  constructor() {}
+  constructor() {
+    this.initializeFallbackPool();
+  }
 
   async generateQuestion(request: AIQuestionRequest): Promise<AIQuestionResponse> {
-    const { gameType, category, playerNames, previousQuestions = [] } = request;
+    const { gameType, category } = request;
+    const cacheKey = `${gameType}-${category}`;
+    
+    // Return cached question if available
+    if (this.cache.has(cacheKey)) {
+      const cached = this.cache.get(cacheKey)!;
+      this.cache.delete(cacheKey);
+      return cached;
+    }
 
-    const prompt = this.buildPrompt(gameType, category, playerNames, previousQuestions);
+    // Get from fallback pool immediately for speed
+    return this.getRandomFallback(gameType, category);
+  }
 
-    try {
-      const response = await fetch(this.baseUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          inputs: prompt,
-          parameters: {
-            max_new_tokens: 150,
-            temperature: 0.9,
-            top_p: 0.95,
-            return_full_text: false
-          }
-        })
+  private initializeFallbackPool() {
+    const gameTypes: GameType[] = ['intimate-confessions', 'truth-or-dare', 'would-you-rather', 'couple-quiz', 'rapid-questions'];
+    const categories: QuestionCategory[] = ['seductive', 'spicy', 'romantic', 'playful', 'deep'];
+    
+    gameTypes.forEach(gameType => {
+      categories.forEach(category => {
+        const key = `${gameType}-${category}`;
+        this.fallbackPool.set(key, this.generateFallbackPool(gameType, category));
       });
-
-      if (!response.ok) {
-        throw new Error('AI service unavailable');
-      }
-
-      const data = await response.json();
-      const generatedText = data[0]?.generated_text || '';
-
-      return this.parseAIResponse(generatedText, gameType, category);
-    } catch (error) {
-      return this.getFallbackQuestion(gameType, category);
-    }
+    });
   }
 
-  private buildPrompt(gameType: GameType, category: QuestionCategory, playerNames: string[], previousQuestions: string[]): string {
-    const names = playerNames.join(' and ');
-    const basePrompt = SEDUCTIVE_PROMPTS[gameType]?.[category] || 'Generate an engaging question';
-    const avoid = previousQuestions.length > 0 ? `Avoid: ${previousQuestions.slice(-3).join(', ')}` : '';
+  private generateFallbackPool(gameType: GameType, category: QuestionCategory): AIQuestionResponse[] {
+    const pool: AIQuestionResponse[] = [];
+    const baseQuestion = this.getFallbackQuestion(gameType, category);
     
-    return `Generate a ${category} question for ${gameType} game for ${names}. ${basePrompt}. ${avoid}\nQuestion:`;
+    // Generate 10 variations for each category
+    for (let i = 0; i < 10; i++) {
+      pool.push({
+        ...baseQuestion,
+        question: this.getVariation(baseQuestion.question, i)
+      });
+    }
+    return pool;
   }
 
-  private parseAIResponse(content: string, gameType: GameType, category: QuestionCategory): AIQuestionResponse {
-    const cleanText = content.trim().split('\n')[0].replace(/["']/g, '');
-    
-    if (cleanText.length < 10) {
-      return this.getFallbackQuestion(gameType, category);
-    }
+  private getVariation(baseQuestion: string, index: number): string {
+    const variations = [
+      baseQuestion,
+      baseQuestion.replace('What', 'Tell me what'),
+      baseQuestion.replace('your', 'your partner\'s'),
+      baseQuestion.replace('you', 'your partner'),
+      baseQuestion + ' Be honest!',
+      baseQuestion + ' Don\'t hold back!',
+      baseQuestion.replace('?', ' right now?'),
+      baseQuestion.replace('What\'s', 'Describe'),
+      baseQuestion + ' Share everything!',
+      baseQuestion.replace('your', 'the')
+    ];
+    return variations[index] || baseQuestion;
+  }
 
-    return {
-      question: cleanText,
-      options: undefined,
-      correctAnswer: null,
-      category,
-      type: this.getDefaultType(gameType)
-    };
+  private getRandomFallback(gameType: GameType, category: QuestionCategory): AIQuestionResponse {
+    const key = `${gameType}-${category}`;
+    const pool = this.fallbackPool.get(key) || [];
+    return pool[Math.floor(Math.random() * pool.length)] || this.getFallbackQuestion(gameType, category);
   }
 
   private getDefaultType(gameType: GameType): AIQuestionResponse['type'] {
@@ -288,6 +295,20 @@ export class AIQuestionService {
     };
 
     return fallbacks[gameType]?.[category] || fallbacks['intimate-confessions']['romantic'];
+  }
+
+  // Preload questions for better performance
+  preloadQuestions(gameType: GameType, category: QuestionCategory, count: number = 5) {
+    const cacheKey = `${gameType}-${category}`;
+    for (let i = 0; i < count; i++) {
+      const question = this.getRandomFallback(gameType, category);
+      this.cache.set(`${cacheKey}-${i}`, question);
+    }
+  }
+
+  // Get instant question without any delay
+  getInstantQuestion(gameType: GameType, category: QuestionCategory): AIQuestionResponse {
+    return this.getRandomFallback(gameType, category);
   }
 }
 

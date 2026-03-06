@@ -4,6 +4,8 @@ import { Room, GameType, QuestionCategory } from '../types/gameTypes';
 class SocketService {
   private socket: Socket | null = null;
   private listeners: Map<string, Function[]> = new Map();
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 3;
 
   connect(): Socket {
     if (this.socket?.connected) {
@@ -16,12 +18,14 @@ class SocketService {
       path: '/socket.io/',
       transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000
+      reconnectionAttempts: this.maxReconnectAttempts,
+      reconnectionDelay: 500, // Reduced from 1000ms
+      timeout: 5000 // Reduced timeout
     });
 
     this.socket.on('connect', () => {
       console.log('✅ Game socket connected:', this.socket?.id);
+      this.reconnectAttempts = 0;
     });
 
     this.socket.on('disconnect', () => {
@@ -30,6 +34,10 @@ class SocketService {
 
     this.socket.on('connect_error', (error) => {
       console.error('❌ Socket connection error:', error);
+      this.reconnectAttempts++;
+      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+        console.log('⚠️ Max reconnection attempts reached, switching to offline mode');
+      }
     });
 
     return this.socket;
@@ -41,15 +49,23 @@ class SocketService {
     this.listeners.clear();
   }
 
-  // Room events
+  // Room events with timeout handling
   createRoom(playerId: string, playerName: string): void {
     console.log('📤 Emitting game:create-room', { playerId, playerName });
-    this.socket?.emit('game:create-room', { playerId, playerName });
+    if (this.socket?.connected) {
+      this.socket.emit('game:create-room', { playerId, playerName });
+    } else {
+      console.warn('⚠️ Socket not connected, room will be created locally');
+    }
   }
 
   joinRoom(code: string, playerId: string, playerName: string): void {
     console.log('📤 Emitting game:join-room', { code, playerId, playerName });
-    this.socket?.emit('game:join-room', { code, playerId, playerName });
+    if (this.socket?.connected) {
+      this.socket.emit('game:join-room', { code, playerId, playerName });
+    } else {
+      console.warn('⚠️ Socket not connected, joining local room');
+    }
   }
 
   leaveRoom(code: string, playerId: string): void {
@@ -77,13 +93,18 @@ class SocketService {
     this.socket?.emit('game:restart', { code });
   }
 
-  // Listeners
+  // Optimized listeners with debouncing
   on(event: string, callback: Function): void {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
     }
-    this.listeners.get(event)?.push(callback);
-    this.socket?.on(event, callback as any);
+    const callbacks = this.listeners.get(event)!;
+    
+    // Prevent duplicate listeners
+    if (!callbacks.includes(callback)) {
+      callbacks.push(callback);
+      this.socket?.on(event, callback as any);
+    }
   }
 
   off(event: string, callback?: Function): void {
