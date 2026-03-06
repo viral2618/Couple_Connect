@@ -1,24 +1,25 @@
 import './globals.css'
 import type { Metadata } from 'next'
 import { AuthProvider } from '@/contexts/AuthContext'
+import SocketInitializer from '@/components/SocketInitializer'
 
 export const metadata: Metadata = {
   title: '💕 Couple Connect - Stay Connected Forever',
-  description: 'The ultimate long-distance relationship app with real-time chat, video calls, and couple games. Stay connected with your partner no matter the distance.',
-  keywords: 'couple app, long distance relationship, video chat, couple games, relationship app',
+  description: 'The ultimate long-distance relationship app with real-time chat and video calls. Stay connected with your partner no matter the distance.',
+  keywords: 'couple app, long distance relationship, video chat, relationship app',
   authors: [{ name: 'Couple Connect Team' }],
   viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no',
   themeColor: '#ec4899',
   openGraph: {
     title: '💕 Couple Connect - Stay Connected Forever',
-    description: 'The ultimate long-distance relationship app with real-time chat, video calls, and couple games.',
+    description: 'The ultimate long-distance relationship app with real-time chat and video calls.',
     type: 'website',
     locale: 'en_US',
   },
   twitter: {
     card: 'summary_large_image',
     title: '💕 Couple Connect - Stay Connected Forever',
-    description: 'The ultimate long-distance relationship app with real-time chat, video calls, and couple games.',
+    description: 'The ultimate long-distance relationship app with real-time chat and video calls.',
   },
   robots: {
     index: true,
@@ -44,6 +45,7 @@ export default function RootLayout({
         <meta name="theme-color" content="#ec4899" />
       </head>
       <body className="font-body antialiased bg-gradient-to-br from-love-50 via-pink-50 to-purple-50 min-h-screen">
+        <SocketInitializer />
         <AuthProvider>
           <div className="relative min-h-screen">
             {/* Background Pattern */}

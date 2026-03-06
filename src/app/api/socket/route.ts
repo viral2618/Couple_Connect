@@ -88,6 +88,78 @@ export async function GET(req: NextRequest) {
         })
       })
 
+      // Game room handlers
+      socket.on('game:create-room', ({ playerId, playerName }) => {
+        console.log('🎲 Creating game room for:', playerName, 'Socket:', socket.id)
+        try {
+          const roomCode = generateRoomCode()
+          
+          const gameRoom = {
+            code: roomCode,
+            players: [{ id: playerId, name: playerName, score: 0 }],
+            gameType: null,
+            gameState: {
+              currentRound: 1,
+              totalRounds: 10,
+              currentQuestion: null,
+              answers: {},
+              scores: {}
+            },
+            createdAt: Date.now()
+          }
+          
+          rooms.set(roomCode, gameRoom as any)
+          socket.join(roomCode)
+          
+          console.log('✅ Game room created:', roomCode, 'Socket joined room')
+          socket.emit('game:room-updated', gameRoom)
+        } catch (error) {
+          console.error('❌ Failed to create game room:', error)
+          socket.emit('game:error', { message: 'Failed to create room' })
+        }
+      })
+
+      socket.on('game:join-room', ({ code, playerId, playerName }) => {
+        console.log('🚪 Joining game room:', code, playerName, 'Socket:', socket.id)
+        try {
+          const gameRoom = rooms.get(code) as any
+          if (!gameRoom) {
+            console.error('❌ Room not found:', code)
+            socket.emit('game:error', { message: 'Room not found' })
+            return
+          }
+          
+          if (gameRoom.players.length >= 2) {
+            console.error('❌ Room full:', code)
+            socket.emit('game:error', { message: 'Room is full' })
+            return
+          }
+          
+          gameRoom.players.push({ id: playerId, name: playerName, score: 0 })
+          socket.join(code)
+          
+          console.log('✅ Player joined. Total:', gameRoom.players.length, 'Broadcasting update...')
+          io.to(code).emit('game:room-updated', gameRoom)
+        } catch (error) {
+          console.error('❌ Failed to join game room:', error)
+          socket.emit('game:error', { message: 'Failed to join room' })
+        }
+      })
+
+      socket.on('game:select-game', ({ code, gameType }) => {
+        console.log('🎮 Game selected:', gameType, 'for room:', code, 'by socket:', socket.id)
+        const gameRoom = rooms.get(code) as any
+        if (gameRoom) {
+          gameRoom.gameType = gameType
+          console.log('✅ Broadcasting to room:', code, 'Players:', gameRoom.players.length)
+          console.log('📡 Room sockets:', io.sockets.adapter.rooms.get(code))
+          io.to(code).emit('game:room-updated', gameRoom)
+          console.log('✅ Broadcast complete. GameType:', gameType)
+        } else {
+          console.error('❌ Room not found:', code)
+        }
+      })
+
       // Room creation
       socket.on('create_room', (data) => {
         try {

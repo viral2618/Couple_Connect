@@ -86,9 +86,9 @@ export default function HomePage() {
     },
     {
       title: 'Play Games',
-      desc: 'Fun couple games to play together',
+      desc: 'Intimate games for couples',
       icon: '🎮',
-      gradient: 'from-purple-400 to-purple-600',
+      gradient: 'from-purple-400 to-pink-600',
       href: '/games',
       delay: 0.3
     },
@@ -96,7 +96,7 @@ export default function HomePage() {
       title: 'Share Photos',
       desc: 'Create beautiful memories together',
       icon: '📸',
-      gradient: 'from-pink-400 to-pink-600',
+      gradient: 'from-pink-400 to-rose-600',
       href: '/photos',
       delay: 0.4
     }
@@ -154,13 +154,6 @@ export default function HomePage() {
                       className="flex items-center gap-2 text-love-600 hover:text-love-700 font-medium transition-colors duration-200 px-3 py-2 rounded-full hover:bg-love-50"
                     >
                       💬 <span className="hidden md:inline">Chat</span>
-                    </motion.a>
-                    <motion.a
-                      href="/games"
-                      whileHover={{ scale: 1.05 }}
-                      className="flex items-center gap-2 text-love-600 hover:text-love-700 font-medium transition-colors duration-200 px-3 py-2 rounded-full hover:bg-love-50"
-                    >
-                      🎮 <span className="hidden md:inline">Games</span>
                     </motion.a>
                   </div>
                   

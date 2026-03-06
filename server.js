@@ -24,39 +24,21 @@ const port = process.env.PORT || 3000
 const app = next({ dev })
 const handle = app.getRequestHandler()
 
-// Global room management for all features
-const rooms = new Map()
+// Video room management
 const videoRooms = new Map()
 
-function generateRoomCode() {
-  let code
-  do {
-    code = Math.random().toString(36).substring(2, 8).toUpperCase()
-  } while (rooms.has(code))
-  return code
-}
+// Game room management
+const gameRooms = new Map()
 
 // Add process handlers for graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, cleaning up...')
-  // Clean up all room timers
-  for (const [roomCode, room] of rooms.entries()) {
-    if (room.gameData && room.gameData.timer) {
-      clearTimeout(room.gameData.timer)
-    }
-  }
   prisma.$disconnect()
   process.exit(0)
 })
 
 process.on('SIGINT', () => {
   console.log('SIGINT received, cleaning up...')
-  // Clean up all room timers
-  for (const [roomCode, room] of rooms.entries()) {
-    if (room.gameData && room.gameData.timer) {
-      clearTimeout(room.gameData.timer)
-    }
-  }
   prisma.$disconnect()
   process.exit(0)
 })
@@ -125,9 +107,6 @@ app.prepare().then(async () => {
     connectTimeout: 45000
   })
 
-  // Import couples game handlers
-  const { setupCouplesGameHandlers } = require('./src/lib/couplesGameHandlers-fixed')
-  
   io.on('connection', (socket) => {
     console.log('User connected:', socket.id)
 
@@ -135,37 +114,6 @@ app.prepare().then(async () => {
     if (mediasoupAvailable) {
       setupMediasoupHandlers(io, socket)
     }
-
-    // Setup couples game handlers for this socket
-    setupCouplesGameHandlers(io, socket, rooms)
-
-    // Simple WebRTC signaling for peer-to-peer video calls
-    socket.on('join-video-room', ({ roomId, userId }) => {
-      console.log(`[WebRTC] User ${userId} joining room ${roomId}`)
-      socket.join(roomId)
-      socket.to(roomId).emit('user-joined', { userId })
-    })
-
-    socket.on('offer', ({ roomId, offer }) => {
-      console.log(`[WebRTC] Relaying offer in room ${roomId}`)
-      socket.to(roomId).emit('offer', { offer, userId: socket.id })
-    })
-
-    socket.on('answer', ({ roomId, answer }) => {
-      console.log(`[WebRTC] Relaying answer in room ${roomId}`)
-      socket.to(roomId).emit('answer', { answer })
-    })
-
-    socket.on('ice-candidate', ({ roomId, candidate }) => {
-      console.log(`[WebRTC] Relaying ICE candidate in room ${roomId}`)
-      socket.to(roomId).emit('ice-candidate', { candidate })
-    })
-
-    socket.on('leave-video-room', ({ roomId }) => {
-      console.log(`[WebRTC] User leaving room ${roomId}`)
-      socket.to(roomId).emit('user-left')
-      socket.leave(roomId)
-    })
 
     // Enhanced video calling system for 2-way calls only
     socket.on('join-video-room', ({ roomId, userId }) => {
@@ -266,6 +214,145 @@ app.prepare().then(async () => {
       }
     })
 
+    // Game system handlers
+    socket.on('game:create-room', ({ playerId, playerName }) => {
+      console.log('🎲 Creating game room for:', playerName, playerId);
+      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const room = {
+        code,
+        players: [{ id: playerId, name: playerName, score: 0 }],
+        gameType: null,
+        gameState: {
+          currentRound: 1,
+          totalRounds: 10,
+          currentQuestion: null,
+          answers: {},
+          scores: {}
+        },
+        createdAt: Date.now()
+      };
+      gameRooms.set(code, room);
+      socket.join(`game:${code}`);
+      console.log('✅ Game room created, emitting update:', code);
+      socket.emit('game:room-updated', room);
+    });
+
+    socket.on('game:join-room', ({ code, playerId, playerName }) => {
+      console.log('🚪 Joining game room:', code, playerName, playerId);
+      const room = gameRooms.get(code);
+      if (!room) {
+        console.log('❌ Room not found:', code);
+        socket.emit('game:error', { message: 'Room not found' });
+        return;
+      }
+      if (room.players.length >= 2) {
+        console.log('❌ Room is full:', code);
+        socket.emit('game:error', { message: 'Room is full' });
+        return;
+      }
+      room.players.push({ id: playerId, name: playerName, score: 0 });
+      socket.join(`game:${code}`);
+      console.log('✅ Player joined, emitting update to room:', code);
+      
+      // Emit to all clients in room including the one who just joined
+      setTimeout(() => {
+        io.to(`game:${code}`).emit('game:room-updated', room);
+        console.log('📤 Room update sent to all players in', code);
+      }, 100);
+    });
+
+    socket.on('game:select-game', ({ code, gameType }) => {
+      const room = gameRooms.get(code);
+      if (!room) return;
+      room.gameType = gameType;
+      room.gameState.status = 'playing';
+      room.gameState.currentRound = 1;
+      io.to(`game:${code}`).emit('game:room-updated', room);
+      console.log(`Game ${gameType} selected for room ${code}`);
+    });
+
+    socket.on('game:request-question', async ({ code, category }) => {
+      const room = gameRooms.get(code);
+      if (!room) return;
+      
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/games/question`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            gameType: room.gameType,
+            category,
+            playerNames: room.players.map(p => p.name)
+          })
+        });
+        const question = await response.json();
+        question.id = `q_${Date.now()}`;
+        room.gameState.currentQuestion = question;
+        io.to(`game:${code}`).emit('game:question-received', question);
+      } catch (error) {
+        console.error('Failed to generate question:', error);
+      }
+    });
+
+    socket.on('game:submit-answer', ({ code, playerId, answer }) => {
+      const room = gameRooms.get(code);
+      if (!room) return;
+      room.gameState.answers[playerId] = answer;
+      io.to(`game:${code}`).emit('game:answer-received', { playerId, answer });
+    });
+
+    socket.on('game:next-round', ({ code }) => {
+      const room = gameRooms.get(code);
+      if (!room) return;
+      room.gameState.currentRound++;
+      room.gameState.currentQuestion = null;
+      room.gameState.answers = {};
+      io.to(`game:${code}`).emit('game:room-updated', room);
+    });
+
+    socket.on('game:vote-winner', async ({ code, winnerId, voterId }) => {
+      const room = gameRooms.get(code);
+      if (!room) return;
+      
+      // Update scores
+      room.gameState.scores[winnerId] = (room.gameState.scores[winnerId] || 0) + 1;
+      
+      // Save to database
+      try {
+        await prisma.gameSession.upsert({
+          where: { roomCode: code },
+          update: {
+            scores: room.gameState.scores,
+            currentRound: room.gameState.currentRound
+          },
+          create: {
+            roomCode: code,
+            gameType: room.gameType,
+            players: room.players.map(p => p.name),
+            scores: room.gameState.scores,
+            currentRound: room.gameState.currentRound
+          }
+        });
+      } catch (error) {
+        console.error('Failed to save game session:', error);
+      }
+      
+      io.to(`game:${code}`).emit('game:scores-updated', room.gameState.scores);
+      console.log(`Winner voted in room ${code}: ${winnerId}`);
+    });
+
+    socket.on('game:leave-room', ({ code, playerId }) => {
+      const room = gameRooms.get(code);
+      if (!room) return;
+      room.players = room.players.filter(p => p.id !== playerId);
+      if (room.players.length === 0) {
+        gameRooms.delete(code);
+      } else {
+        io.to(`game:${code}`).emit('game:room-updated', room);
+      }
+      socket.leave(`game:${code}`);
+    });
+
     socket.on('leave-video-room', ({ roomId, userId }) => {
       if (!roomId || !userId) return
       
@@ -319,6 +406,22 @@ app.prepare().then(async () => {
       }
     })
 
+    // WebRTC signaling handlers
+    socket.on('offer', ({ roomId, offer }) => {
+      console.log(`[WebRTC] Relaying offer in room ${roomId}`)
+      socket.to(roomId).emit('offer', { offer, userId: socket.id })
+    })
+
+    socket.on('answer', ({ roomId, answer }) => {
+      console.log(`[WebRTC] Relaying answer in room ${roomId}`)
+      socket.to(roomId).emit('answer', { answer })
+    })
+
+    socket.on('ice-candidate', ({ roomId, candidate }) => {
+      console.log(`[WebRTC] Relaying ICE candidate in room ${roomId}`)
+      socket.to(roomId).emit('ice-candidate', { candidate })
+    })
+
     // Chat room management
     socket.on('join-room', (roomId) => {
       socket.join(roomId)
@@ -333,11 +436,6 @@ app.prepare().then(async () => {
     socket.on('message-reaction', (data) => {
       if (!data.roomId) return
       socket.to(data.roomId).emit('message-reaction', { messageId: data.messageId, reactions: data.reactions })
-    })
-
-    // Universal signaling for video calls
-    socket.on('signal', ({ signal, roomId, userId }) => {
-      socket.to(roomId).emit('signal', { signal, userId })
     })
 
     socket.on('leave-room', ({ roomId, userId }) => {
@@ -364,170 +462,6 @@ app.prepare().then(async () => {
             break
           }
         }
-      }
-      
-      // Clean up game rooms
-      for (const [roomCode, room] of rooms.entries()) {
-        if (room.host && room.host.socketId === socket.id) {
-          // Host disconnected, notify guests and clean up
-          socket.to(roomCode).emit('host_disconnected')
-          if (room.gameData && room.gameData.timer) {
-            clearTimeout(room.gameData.timer)
-          }
-          rooms.delete(roomCode)
-          console.log(`Room ${roomCode} deleted - host disconnected`)
-        } else if (room.guest && room.guest.socketId === socket.id) {
-          // Guest disconnected
-          room.guest = null
-          room.players = room.players.filter(p => p.socketId !== socket.id)
-          socket.to(roomCode).emit('guest_disconnected')
-          console.log(`Guest left room ${roomCode}`)
-        }
-      }
-    })
-
-    // Handle room creation
-    socket.on('create_room', (data) => {
-      try {
-        console.log('[CREATE_ROOM] Request received:', data)
-        console.log('[CREATE_ROOM] Socket ID:', socket.id)
-        console.log('[CREATE_ROOM] Socket connected:', socket.connected)
-        
-        const roomCode = generateRoomCode()
-        const playerName = data.playerName || `Player_${socket.id.substring(0, 6)}`
-        
-        // Ensure socket joins the room FIRST
-        socket.join(roomCode)
-        console.log(`[CREATE_ROOM] Socket ${socket.id} created and joined room ${roomCode}`)
-        
-        const room = {
-          id: roomCode,
-          code: roomCode,
-          host: {
-            id: playerName,
-            socketId: socket.id
-          },
-          guest: null,
-          players: [{
-            id: playerName,
-            name: playerName,
-            socketId: socket.id
-          }],
-          gameState: 'waiting',
-          hostId: playerName,
-          currentGame: 'menu',
-          currentRound: 0,
-          maxRounds: 3,
-          scores: { [playerName]: 0 }
-        }
-        
-        rooms.set(roomCode, room)
-        console.log(`[CREATE_ROOM] Room stored in memory. Total rooms: ${rooms.size}`)
-        
-        const roomData = {
-          id: room.id,
-          code: room.code,
-          host: { id: room.host.id },
-          players: room.players.map(p => ({ id: p.id, name: p.name })),
-          gameState: room.gameState,
-          currentGame: room.currentGame,
-          scores: { ...room.scores }
-        }
-        
-        socket.emit('room_created', {
-          roomId: roomCode,
-          roomCode: roomCode,
-          room: roomData
-        })
-        console.log(`[CREATE_ROOM] Emitted room_created event to socket ${socket.id}`)
-        
-        // Confirm the host is connected
-        socket.emit('players-connected', {
-          totalPlayers: room.players.length,
-          players: room.players.map(p => ({ id: p.id, name: p.name })),
-          canStartGame: false // Need 2 players
-        })
-        
-        console.log(`[CREATE_ROOM] SUCCESS - Room ${roomCode} created by ${playerName}`)
-      } catch (error) {
-        console.error('[CREATE_ROOM] ERROR:', error)
-        socket.emit('error', { message: error.message })
-      }
-    })
-
-    // Handle room joining
-    socket.on('join_room', (data) => {
-      try {
-        console.log('[JOIN_ROOM] Request received:', data)
-        console.log('[JOIN_ROOM] Socket ID:', socket.id)
-        console.log('[JOIN_ROOM] Available rooms:', Array.from(rooms.keys()))
-        
-        const room = rooms.get(data.roomCode)
-        if (!room) {
-          console.log('[JOIN_ROOM] Room not found:', data.roomCode)
-          socket.emit('error', { message: 'Room not found' })
-          return
-        }
-        
-        if (room.guest) {
-          console.log('[JOIN_ROOM] Room is full:', data.roomCode)
-          socket.emit('error', { message: 'Room is full' })
-          return
-        }
-        
-        const playerName = data.playerName || `Player_${socket.id.substring(0, 6)}`
-        
-        // Ensure socket joins the room FIRST
-        socket.join(data.roomCode)
-        console.log(`[JOIN_ROOM] Socket ${socket.id} joined room ${data.roomCode}`)
-        
-        room.guest = {
-          id: playerName,
-          socketId: socket.id
-        }
-        
-        room.players.push({
-          id: playerName,
-          name: playerName,
-          socketId: socket.id
-        })
-        
-        room.scores[playerName] = 0
-        
-        const roomData = {
-          id: room.id,
-          code: room.code,
-          host: { id: room.host.id },
-          guest: room.guest ? { id: room.guest.id } : null,
-          players: room.players.map(p => ({ id: p.id, name: p.name })),
-          gameState: room.gameState,
-          currentGame: room.currentGame,
-          scores: { ...room.scores }
-        }
-        
-        // Send confirmation to the joining player
-        socket.emit('room_joined', {
-          roomId: data.roomCode,
-          roomCode: data.roomCode,
-          room: roomData
-        })
-        console.log(`[JOIN_ROOM] Emitted room_joined to socket ${socket.id}`)
-        
-        // Notify all players in the room about the update
-        io.to(data.roomCode).emit('room-update', roomData)
-        console.log(`[JOIN_ROOM] Emitted room-update to room ${data.roomCode}`)
-        
-        // Send a specific event to confirm both players are connected
-        io.to(data.roomCode).emit('players-connected', {
-          totalPlayers: room.players.length,
-          players: room.players.map(p => ({ id: p.id, name: p.name })),
-          canStartGame: room.players.length >= 2
-        })
-        
-        console.log(`[JOIN_ROOM] SUCCESS - Player ${playerName} joined room ${data.roomCode}. Total players: ${room.players.length}`)
-      } catch (error) {
-        console.error('[JOIN_ROOM] ERROR:', error)
-        socket.emit('error', { message: error.message })
       }
     })
   })
