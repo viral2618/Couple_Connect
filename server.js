@@ -67,7 +67,7 @@ app.prepare().then(async () => {
             
             const allowedOrigins = [
               process.env.NEXT_PUBLIC_APP_URL,
-              "https://coupleconnect-production-35ae.up.railway.app",
+              "https://coupleconnect-production-67d9.up.railway.app",
               /https:\/\/.*\.up\.railway\.app$/,
               "https://couple-connect.vercel.app",
               /https:\/\/.*\.vercel\.app$/
