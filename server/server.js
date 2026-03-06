@@ -5,8 +5,7 @@ const { PrismaClient } = require('@prisma/client')
 const cors = require('cors')
 const path = require('path')
 
-// Import game server
-const GameServer = require('./game-engine/src/server')
+
 
 const prisma = new PrismaClient({
   errorFormat: 'pretty',
@@ -78,14 +77,8 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() })
 })
 
-// Import couples game handlers
-const { setupCouplesGameHandlers } = require('../client/src/lib/couplesGameHandlers')
-
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id)
-
-  // Setup couples game handlers for this socket
-  setupCouplesGameHandlers(io, socket, rooms)
 
   // Unified room management for both chat and video calls
   socket.on('join-room', (roomId) => {
