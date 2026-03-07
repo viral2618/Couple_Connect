@@ -166,6 +166,16 @@ body {
   background: linear-gradient(135deg, #f472b6, #ec4899);
 }
 
+/* Hide scrollbar */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* Chat scrollbar */
 .chat-scroll::-webkit-scrollbar {
   width: 6px;

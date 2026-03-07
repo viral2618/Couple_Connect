@@ -46,20 +46,26 @@ export default function MessageList({ messages, currentUserId, isLoading, messag
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showReactions])
 
+  const [seenMessages, setSeenMessages] = useState<Set<string>>(new Set())
+
   useEffect(() => {
-    // Mark messages as seen when they become visible
-    const unseenMessages = messages
-      .filter(msg => msg.receiverId === currentUserId && !msg.seenAt && visibleMessages.has(msg.id))
-      .map(msg => msg.id)
-    
+    // Mark received messages as seen without reload
+    const unseenMessages = messages.filter(msg => msg.receiverId === currentUserId && !msg.seenAt && !seenMessages.has(msg.id))
     if (unseenMessages.length > 0) {
-      fetch('/api/messages/seen', {
+      const partnerId = unseenMessages[0].senderId
+      const messageIds = unseenMessages.map(m => m.id)
+      
+      // Mark locally first
+      setSeenMessages(prev => new Set([...Array.from(prev), ...messageIds]))
+      
+      // Then update server
+      fetch('/api/messages/mark-seen', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messageIds: unseenMessages })
+        body: JSON.stringify({ partnerId })
       })
     }
-  }, [visibleMessages, messages, currentUserId])
+  }, [messages, currentUserId, seenMessages])
 
   const handleReactionClick = (messageId: string, emoji: string) => {
     onReaction(messageId, emoji)
@@ -97,9 +103,7 @@ export default function MessageList({ messages, currentUserId, isLoading, messag
     <div 
       className="h-full overflow-y-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-4 space-y-3 bg-gradient-to-br from-rose-50/50 via-pink-50/50 to-purple-50/50" 
       style={{
-        WebkitOverflowScrolling: 'touch',
-        scrollbarWidth: 'thin',
-        scrollbarColor: '#fb7185 #fce7f3'
+        WebkitOverflowScrolling: 'touch'
       }}
     >
       {messages.map((message, index) => {
@@ -107,7 +111,8 @@ export default function MessageList({ messages, currentUserId, isLoading, messag
         const showAvatar = !isOwn && (index === 0 || messages[index - 1].senderId !== message.senderId)
         const isLastInGroup = index === messages.length - 1 || messages[index + 1].senderId !== message.senderId
         const replyMessage = message.replyTo ? getReplyMessage(message.replyTo) : null
-        const isUnseen = !isOwn && !message.seenAt
+        const isUnseen = !isOwn && !message.seenAt && !seenMessages.has(message.id)
+        const isSeen = isOwn && (message.seenAt || seenMessages.has(message.id))
         
         return (
           <motion.div
@@ -231,16 +236,25 @@ export default function MessageList({ messages, currentUserId, isLoading, messag
                     })}
                   </p>
                   {isOwn && (
-                    <div className="flex items-center">
-                      {message.seenAt ? (
-                        <svg className="w-4 h-4 text-blue-300" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L4 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
+                    <div className="flex items-center gap-1">
+                      {isSeen ? (
+                        <div className="flex items-center gap-0.5">
+                          <svg className="w-3 h-3 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                          <svg className="w-3 h-3 text-blue-400 -ml-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        </div>
                       ) : (
-                        <svg className="w-4 h-4 text-white/50" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
+                        <div className="flex items-center gap-0.5">
+                          <svg className="w-3 h-3 text-white/50" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                          <svg className="w-3 h-3 text-white/30 -ml-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        </div>
                       )}
                     </div>
                   )}

@@ -78,13 +78,16 @@ export default function GamesPage() {
   }, []);
 
   const handleSelectGame = useCallback((gameType: GameType) => {
-    console.log('🎯 Selecting game:', gameType, 'Room code:', roomCode);
+    const currentRoomCode = room?.code || roomCode;
+    console.log('🎯 Selecting game:', gameType, 'Room code:', currentRoomCode, 'Room object code:', room?.code);
     setSelectedGameType(gameType);
-    if (roomCode) {
-      socketService.selectGame(roomCode, gameType);
+    if (currentRoomCode) {
+      socketService.selectGame(currentRoomCode, gameType);
       setShowGameSelector(false);
+    } else {
+      console.error('❌ No room code available for game selection');
     }
-  }, [roomCode]);
+  }, [room?.code, roomCode]);
 
   if (!hasEnteredName) {
     return (

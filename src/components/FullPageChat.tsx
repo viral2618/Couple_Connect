@@ -85,7 +85,14 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
 
     socketInstance.on('receive-message', (message: Message) => {
       console.log('Received message:', message)
-      setMessages(prev => [...prev, message])
+      // Only add message if it's not from current user (to avoid duplicates)
+      if (message.senderId !== currentUser.id) {
+        setMessages(prev => {
+          // Check if message already exists
+          if (prev.some(m => m.id === message.id)) return prev
+          return [...prev, message]
+        })
+      }
     })
 
     socketInstance.on('message-reaction', (data: { messageId: string; reactions: { emoji: string; userId: string }[] }) => {
@@ -143,33 +150,53 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
   }
 
   const sendMessage = async () => {
-    console.log('Send button clicked!')
-    console.log('newMessage:', newMessage)
-    console.log('newMessage.trim():', newMessage.trim())
-    console.log('canChat:', canChat)
-    
     if (!newMessage.trim() || !canChat) {
-      console.log('Cannot send message:', { newMessage: newMessage.trim(), canChat })
       return
     }
 
-    console.log('Sending message:', newMessage)
+    const messageContent = newMessage.trim()
+    const tempId = `temp-${Date.now()}-${Math.random()}`
+    
+    // Create optimistic message for instant display
+    const optimisticMessage: Message = {
+      id: tempId,
+      content: messageContent,
+      senderId: currentUser.id,
+      receiverId: partner.id,
+      createdAt: new Date().toISOString(),
+      replyTo: replyingTo?.id,
+      sender: {
+        id: currentUser.id,
+        name: currentUser.name,
+        avatar: currentUser.avatar
+      }
+    }
+
+    // Add message to UI immediately
+    setMessages(prev => [...prev, optimisticMessage])
+    setNewMessage('')
+    setReplyingTo(null)
+
     try {
       const response = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          content: newMessage, 
+          content: messageContent, 
           receiverId: partner.id,
           replyTo: replyingTo?.id
         })
       })
 
-      console.log('API response status:', response.status)
       if (response.ok) {
         const savedMessage = await response.json()
-        console.log('Saved message:', savedMessage)
         
+        // Replace optimistic message with real message
+        setMessages(prev => prev.map(msg => 
+          msg.id === tempId ? savedMessage : msg
+        ))
+        
+        // Send to partner via socket
         if (socket) {
           const roomId = [currentUser.id, partner.id].sort().join('-')
           socket.emit('send-message', {
@@ -177,14 +204,16 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
             roomId
           })
         }
-        
-        setNewMessage('')
-        setReplyingTo(null)
       } else {
-        const errorData = await response.json()
-        console.error('API error:', errorData)
+        // Remove optimistic message on error
+        setMessages(prev => prev.filter(msg => msg.id !== tempId))
+        setNewMessage(messageContent) // Restore message text
+        console.error('Failed to send message')
       }
     } catch (error) {
+      // Remove optimistic message on error
+      setMessages(prev => prev.filter(msg => msg.id !== tempId))
+      setNewMessage(messageContent) // Restore message text
       console.error('Failed to send message:', error)
     }
   }
@@ -257,7 +286,7 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
         />
       )}
       
-      <ChatHeader partner={partner} isOnline={isOnline} onVideoCall={startVideoCall} />
+      <ChatHeader partner={partner} isOnline={isOnline} onVideoCall={startVideoCall} currentUser={currentUser} />
       
       <div className="flex-1 overflow-hidden relative">
         <MessageList 

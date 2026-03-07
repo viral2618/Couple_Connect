@@ -11,16 +11,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { messageIds } = await req.json()
+    const { partnerId } = await req.json()
 
-    if (!messageIds || !Array.isArray(messageIds)) {
-      return NextResponse.json({ error: 'Message IDs array required' }, { status: 400 })
-    }
-
-    // Mark messages as seen where current user is the receiver
+    // Mark all messages from partner as seen
     await prisma.message.updateMany({
       where: {
-        id: { in: messageIds },
+        senderId: partnerId,
         receiverId: session.userId,
         seenAt: null
       },
@@ -31,7 +27,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Mark seen error:', error)
+    console.error('Mark all seen error:', error)
     return NextResponse.json({ error: 'Failed to mark messages as seen' }, { status: 500 })
   }
 }

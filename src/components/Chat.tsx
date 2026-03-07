@@ -54,10 +54,13 @@ export default function Chat({ currentUser, partner, onClose }: ChatProps) {
     })
 
     socketInstance.on('receive-message', (message: Message) => {
-      setMessages(prev => {
-        if (prev.some(m => m.id === message.id)) return prev
-        return [...prev, message]
-      })
+      // Only add message if it's not from current user (to avoid duplicates)
+      if (message.senderId !== currentUser.id) {
+        setMessages(prev => {
+          if (prev.some(m => m.id === message.id)) return prev
+          return [...prev, message]
+        })
+      }
     })
 
     setSocket(socketInstance)

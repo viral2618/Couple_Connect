@@ -234,62 +234,6 @@ export default function ChatPage() {
           />
         )}
         
-        <header className="glass backdrop-blur-xl border-b border-white/20 z-40 flex-shrink-0">
-          <div className="px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center py-3 sm:py-4">
-              <div className="flex items-center space-x-3 min-w-0 flex-1">
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => {
-                    setVerifiedPartner(null)
-                    if (user?.id) {
-                      localStorage.removeItem(`verifiedPartner_${user.id}`)
-                    }
-                  }}
-                  className="text-love-600 hover:text-love-700 p-2 hover:bg-love-50 rounded-xl transition-all duration-200"
-                  title="Back to partner selection"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </motion.button>
-                
-                <div className="flex items-center space-x-3 min-w-0">
-                  <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-r from-love-400 to-pink-400 rounded-full flex items-center justify-center flex-shrink-0 shadow-love">
-                    <span className="text-white text-sm sm:text-base font-semibold">
-                      {verifiedPartner.name.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="min-w-0">
-                    <span className="text-gray-800 font-semibold text-base sm:text-lg truncate block">{verifiedPartner.name}</span>
-                    <span className="text-xs text-gray-500">Online now</span>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  className="p-2 text-love-600 hover:bg-love-50 rounded-xl transition-all duration-200"
-                  title="Video call"
-                >
-                  📹
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  className="p-2 text-love-600 hover:bg-love-50 rounded-xl transition-all duration-200"
-                  title="More options"
-                >
-                  ⋯
-                </motion.button>
-              </div>
-            </div>
-          </div>
-        </header>
-        
         <div className="flex-1 overflow-hidden">
           <FullPageChat 
             currentUser={user}
