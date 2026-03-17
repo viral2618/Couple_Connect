@@ -1,471 +1,315 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Room, QuestionCategory, Question } from '@/games/types/gameTypes';
-import { socketService } from '@/games/services/socketService';
 
 interface IntimateConfessionsProps {
   room: Room;
   playerId: string;
 }
 
-type GamePhase = 'waiting' | 'category-select' | 'answering' | 'results';
+const CATEGORIES: { value: QuestionCategory; label: string; emoji: string; color: string }[] = [
+  { value: 'seductive', label: 'Seductive', emoji: '🔥', color: 'from-orange-500 to-red-500' },
+  { value: 'spicy',     label: 'Spicy',     emoji: '🌶️', color: 'from-red-500 to-pink-500' },
+  { value: 'romantic',  label: 'Romantic',  emoji: '💕', color: 'from-pink-400 to-rose-400' },
+  { value: 'playful',   label: 'Playful',   emoji: '😏', color: 'from-purple-400 to-pink-400' },
+  { value: 'deep',      label: 'Deep',      emoji: '💭', color: 'from-indigo-500 to-purple-500' },
+];
 
 export default function IntimateConfessions({ room, playerId }: IntimateConfessionsProps) {
-  const [gamePhase, setGamePhase] = useState<GamePhase>('waiting');
-  const [category, setCategory] = useState<QuestionCategory>('romantic');
+  const [category, setCategory] = useState<QuestionCategory>('seductive');
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
-  const [myAnswer, setMyAnswer] = useState('');
+  const [answer, setAnswer] = useState('');
+  const [showAnswer, setShowAnswer] = useState(false);
   const [partnerAnswer, setPartnerAnswer] = useState<string | null>(null);
   const [scores, setScores] = useState<Record<string, number>>({});
+  const [myAnswerTime, setMyAnswerTime] = useState<number | null>(null);
+  const [partnerAnswerTime, setPartnerAnswerTime] = useState<number | null>(null);
+  const [questionStartTime, setQuestionStartTime] = useState<number>(0);
+  const [winner, setWinner] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [roundNumber, setRoundNumber] = useState(1);
-  const [isHost, setIsHost] = useState(false);
-  const [mySubmitTime, setMySubmitTime] = useState<number | null>(null);
-  const [partnerSubmitTime, setPartnerSubmitTime] = useState<number | null>(null);
-  const [roundWinner, setRoundWinner] = useState<string | null>(null);
-  const [answerQuality, setAnswerQuality] = useState<{ playerId: string; score: number }[]>([]);
-  const [usedQuestions, setUsedQuestions] = useState<Set<string>>(new Set());
-  const [gameEnded, setGameEnded] = useState(false);
-  const MAX_ROUNDS = 5;
-
-  const categories: { value: QuestionCategory; label: string; emoji: string; desc: string }[] = [
-    { value: 'romantic', label: 'Romantic', emoji: '💕', desc: 'Sweet & loving questions' },
-    { value: 'playful', label: 'Playful', emoji: '😏', desc: 'Fun & flirty questions' },
-    { value: 'seductive', label: 'Seductive', emoji: '🔥', desc: 'Hot & steamy questions' },
-    { value: 'deep', label: 'Deep', emoji: '💭', desc: 'Meaningful & intimate' }
-  ];
-
-  const playerName = room.players.find(p => p.id === playerId)?.name || 'You';
-  const partnerName = room.players.find(p => p.id !== playerId)?.name || 'Partner';
+  const initialized = useRef(false);
 
   useEffect(() => {
-    const socket = socketService.connect();
-    const hostPlayer = room.players[0];
-    const amHost = hostPlayer?.id === playerId;
-    setIsHost(amHost);
-    
-    if (amHost && gamePhase === 'waiting') {
-      setGamePhase('category-select');
+    if (!initialized.current) {
+      initialized.current = true;
+      fetchQuestion('seductive');
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    socketService.on('game:question-received', (question: any) => {
-      if (!usedQuestions.has(question.question)) {
-        setUsedQuestions(prev => new Set([...Array.from(prev), question.question]));
-        setCurrentQuestion({
-          id: question.id || Date.now().toString(),
-          text: question.question,
-          category: question.category,
-          type: 'confession'
-        });
-        setGamePhase('answering');
-        setMyAnswer('');
-        setPartnerAnswer(null);
-        setMySubmitTime(null);
-        setPartnerSubmitTime(null);
-        setRoundWinner(null);
-        setAnswerQuality([]);
-      } else {
-        // Request new question if duplicate
-        if (isHost) {
-          socketService.requestQuestion(room.code, category);
-        }
+  useEffect(() => {
+    if (myAnswerTime !== null && partnerAnswerTime !== null) {
+      const myTime = myAnswerTime - questionStartTime;
+      const partnerTime = partnerAnswerTime - questionStartTime;
+      const fastestPlayer = myTime < partnerTime ? playerId : room.players.find(p => p.id !== playerId)?.id;
+      setWinner(fastestPlayer || null);
+      if (fastestPlayer) {
+        setScores(prev => ({ ...prev, [fastestPlayer]: (prev[fastestPlayer] || 0) + 10 }));
       }
-    });
-
-    socketService.on('game:round-update', ({ roundNumber: newRound, gameEnded: ended }: { roundNumber: number; gameEnded: boolean }) => {
-      console.log('📥 Round update received:', { newRound, ended });
-      setRoundNumber(newRound);
-      if (ended) {
-        setGameEnded(true);
-        setGamePhase('results');
-      } else {
-        setGamePhase('category-select');
-      }
-    });
-
-    socketService.on('game:scores-update', ({ scores: newScores }: { scores: Record<string, number> }) => {
-      console.log('📥 Scores update received:', newScores);
-      setScores(newScores);
-    });
-
-    socketService.on('game:answer-received', ({ playerId: answerPlayerId, answer }: { playerId: string; answer: any }) => {
-      console.log('📥 Answer received:', { answerPlayerId, answer });
-      if (answerPlayerId !== playerId) {
-        const answerData = typeof answer === 'object' ? answer.answer : answer;
-        const submitTime = typeof answer === 'object' ? answer.submitTime : Date.now();
-        setPartnerAnswer(answerData);
-        setPartnerSubmitTime(submitTime);
-        
-        if (myAnswer && mySubmitTime) {
-          calculateRoundResults(myAnswer, answerData, mySubmitTime, submitTime);
-        }
-        
-        // Also check if partner should trigger game end
-        if (roundNumber >= MAX_ROUNDS && myAnswer && mySubmitTime) {
-          setTimeout(() => {
-            setGameEnded(true);
-          }, 3000);
-        }
-      }
-    });
-
-    return () => {
-      socketService.off('game:question-received');
-      socketService.off('game:round-update');
-      socketService.off('game:scores-update');
-      socketService.off('game:answer-received');
-    };
-  }, [room, playerId, myAnswer, mySubmitTime]);
-
-  const calculateRoundResults = (answer1: string, answer2: string, time1: number, time2: number) => {
-    const qualityScore1 = calculateAnswerQuality(answer1);
-    const qualityScore2 = calculateAnswerQuality(answer2);
-    
-    const speedBonus = 5;
-    const firstSubmitter = time1 < time2 ? playerId : room.players.find(p => p.id !== playerId)?.id;
-    
-    let player1Score = qualityScore1;
-    let player2Score = qualityScore2;
-    
-    if (firstSubmitter === playerId) {
-      player1Score += speedBonus;
-    } else {
-      player2Score += speedBonus;
     }
-    
-    const winner = player1Score > player2Score ? playerId : room.players.find(p => p.id !== playerId)?.id;
-    setRoundWinner(winner || null);
-    
-    const newScores = { ...scores };
-    newScores[playerId] = (newScores[playerId] || 0) + player1Score;
-    const partnerId = room.players.find(p => p.id !== playerId)?.id;
-    if (partnerId) {
-      newScores[partnerId] = (newScores[partnerId] || 0) + player2Score;
-    }
-    setScores(newScores);
-    
-    // Emit scores update to partner
-    socketService.getSocket()?.emit('game:scores-update', { 
-      code: room.code, 
-      scores: newScores 
-    });
-    
-    setAnswerQuality([
-      { playerId, score: player1Score },
-      { playerId: partnerId || '', score: player2Score }
-    ]);
-    
-    setGamePhase('results');
-    
-    // Check if game should end after this round
-    if (roundNumber >= MAX_ROUNDS) {
-      setTimeout(() => {
-        setGameEnded(true);
-        // Both players emit game end to ensure sync
-        socketService.getSocket()?.emit('game:round-update', {
-          code: room.code,
-          roundNumber: roundNumber,
-          gameEnded: true
-        });
-      }, 3000); // Show round results for 3 seconds then show winner page
+  }, [myAnswerTime, partnerAnswerTime, questionStartTime, playerId, room.players]);
+
+  const fetchQuestion = async (cat: QuestionCategory) => {
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/games/question', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gameType: 'intimate-confessions',
+          category: cat,
+          playerNames: room.players.map(p => p.name),
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to fetch question');
+      const data = await response.json();
+      setCurrentQuestion({ id: Date.now().toString(), text: data.question, category: data.category, type: 'confession' });
+      setQuestionStartTime(Date.now());
+      setShowAnswer(false);
+      setAnswer('');
+      setPartnerAnswer(null);
+      setMyAnswerTime(null);
+      setPartnerAnswerTime(null);
+      setWinner(null);
+    } catch {
+      setCurrentQuestion({ id: Date.now().toString(), text: 'Failed to load question. Tap Next to try again.', category: cat, type: 'confession' });
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const calculateAnswerQuality = (answer: string): number => {
-    let score = 0;
-    
-    if (answer.length >= 10) score += 5;
-    if (answer.length >= 50) score += 5;
-    if (answer.length >= 100) score += 5;
-    
-    const emotionalWords = ['love', 'feel', 'want', 'desire', 'dream', 'wish', 'heart', 'soul', 'passion', 'intimate', 'close', 'together', 'forever', 'always', 'never', 'beautiful', 'amazing', 'incredible'];
-    const foundWords = emotionalWords.filter(word => answer.toLowerCase().includes(word));
-    score += Math.min(foundWords.length * 2, 10);
-    
-    const words = answer.toLowerCase().split(/\s+/);
-    const uniqueWords = new Set(words);
-    if (uniqueWords.size > words.length * 0.8) score += 5;
-    
-    return Math.min(score, 25);
-  };
-
-  const handleStartGame = () => {
-    if (isHost) {
-      socketService.requestQuestion(room.code, category);
-    }
+  const handleCategoryChange = (cat: QuestionCategory) => {
+    setCategory(cat);
+    fetchQuestion(cat);
   };
 
   const handleSubmitAnswer = () => {
-    if (myAnswer.trim()) {
-      console.log('📤 Submitting answer:', myAnswer.trim(), 'Room:', room.code);
-      const submitTime = Date.now();
-      setMySubmitTime(submitTime);
-      socketService.submitAnswer(room.code, playerId, { answer: myAnswer.trim(), submitTime });
-      
-      if (partnerAnswer && partnerSubmitTime) {
-        calculateRoundResults(myAnswer.trim(), partnerAnswer, submitTime, partnerSubmitTime);
-      }
-    }
+    if (!answer.trim()) return;
+    setMyAnswerTime(Date.now());
+    setShowAnswer(true);
+    const partnerResponses = [
+      "I've always wanted to share this with you...",
+      "My deepest desire is to make every moment with you unforgettable.",
+      "I dream about the adventures we could have together.",
+      "There's something I've been wanting to tell you for a long time...",
+      "You make me feel things I've never felt before.",
+      "Every day with you feels like a beautiful secret.",
+    ];
+    setTimeout(() => {
+      setPartnerAnswer(partnerResponses[Math.floor(Math.random() * partnerResponses.length)]);
+      setPartnerAnswerTime(Date.now());
+    }, 3000);
   };
 
   const handleNextRound = () => {
-    if (isHost) {
-      if (roundNumber >= MAX_ROUNDS) {
-        setGameEnded(true);
-        setGamePhase('results');
-        // Emit game end to partner
-        socketService.getSocket()?.emit('game:round-update', {
-          code: room.code,
-          roundNumber: roundNumber,
-          gameEnded: true
-        });
-      } else {
-        const newRound = roundNumber + 1;
-        setRoundNumber(newRound);
-        setGamePhase('category-select');
-        // Emit round update to partner
-        socketService.getSocket()?.emit('game:round-update', {
-          code: room.code,
-          roundNumber: newRound,
-          gameEnded: false
-        });
-      }
-    }
+    setRoundNumber(r => r + 1);
+    fetchQuestion(category);
   };
 
+  const handleVoteWinner = (winnerId: string) => {
+    setScores(prev => ({ ...prev, [winnerId]: (prev[winnerId] || 0) + 10 }));
+  };
+
+  const activeCat = CATEGORIES.find(c => c.value === category)!;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 flex items-center justify-center p-4">
-      <div className="bg-white/95 backdrop-blur-xl rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-purple-200">
-        
-        <div className="text-center mb-6">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">💋 Intimate Confessions</h1>
-          <p className="text-purple-600 text-base mb-3 font-medium">Quality & Speed Matter</p>
-          <div className="flex justify-between text-sm text-gray-700 bg-purple-50 rounded-lg px-4 py-2">
-            <span className="font-semibold">Room: {room.code}</span>
-            <span className="font-semibold">Round: {roundNumber}/{MAX_ROUNDS}</span>
-            <span className="font-semibold">{playerName} vs {partnerName}</span>
-          </div>
+    <div className="min-h-screen bg-gradient-to-br from-[#1a0a2e] via-[#2d0a3e] to-[#1a0a2e] flex flex-col items-center justify-start p-4 pt-6">
+
+      {/* Header */}
+      <div className="w-full max-w-lg mb-5 text-center">
+        <div className="inline-flex items-center gap-2 bg-white/10 border border-pink-500/40 rounded-2xl px-5 py-2 mb-3">
+          <span className="text-2xl">💋</span>
+          <h1 className="text-xl font-bold text-white tracking-wide">Intimate Confessions</h1>
         </div>
+        <div className="flex items-center justify-center gap-4 text-sm text-pink-300">
+          <span>Room: <span className="text-pink-200 font-semibold">{room.code}</span></span>
+          <span className="w-1 h-1 rounded-full bg-pink-400" />
+          <span>Round <span className="text-pink-300 font-semibold">{roundNumber}</span></span>
+        </div>
+      </div>
 
-        {Object.keys(scores).length > 0 && (
-          <div className="bg-gradient-to-r from-green-50 to-purple-50 rounded-xl p-4 mb-4 border border-purple-200">
-            <div className="flex justify-between text-base font-bold">
-              <span className="text-green-600">{playerName}: {scores[playerId] || 0}</span>
-              <span className="text-purple-600">{partnerName}: {scores[room.players.find(p => p.id !== playerId)?.id || ''] || 0}</span>
-            </div>
-          </div>
-        )}
-
-        {gamePhase === 'waiting' && (
-          <div className="text-center py-8">
-            <div className="text-4xl mb-4">⏳</div>
-            <h3 className="text-gray-800 text-lg mb-2 font-semibold">Waiting for host...</h3>
-            <p className="text-gray-600 text-sm">The host will start the game</p>
-          </div>
-        )}
-
-        {gamePhase === 'category-select' && isHost && (
-          <div className="space-y-4">
-            <h3 className="text-gray-800 text-lg font-semibold text-center mb-4">Choose a category:</h3>
-            <div className="grid grid-cols-1 gap-3">
-              {categories.map((cat) => (
-                <button
-                  key={cat.value}
-                  onClick={() => setCategory(cat.value)}
-                  className={`p-4 rounded-xl border-2 transition text-left ${
-                    category === cat.value
-                      ? 'bg-purple-500 border-purple-400 text-white'
-                      : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{cat.emoji}</span>
-                    <div>
-                      <div className="font-semibold">{cat.label}</div>
-                      <div className="text-sm opacity-75">{cat.desc}</div>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
+      {/* Category Selector */}
+      <div className="w-full max-w-lg mb-5">
+        <p className="text-xs text-pink-300 uppercase tracking-widest mb-2 text-center">Choose a vibe</p>
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center flex-wrap">
+          {CATEGORIES.map(cat => (
             <button
-              onClick={handleStartGame}
-              className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition"
+              key={cat.value}
+              onClick={() => handleCategoryChange(cat.value)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all duration-200 border
+                ${category === cat.value
+                  ? `bg-gradient-to-r ${cat.color} text-white border-transparent shadow-lg scale-105`
+                  : 'bg-white/10 text-pink-200 border-white/20 hover:bg-white/20 hover:text-white'
+                }`}
             >
-              🎯 Start Round {roundNumber}
+              <span>{cat.emoji}</span>
+              <span>{cat.label}</span>
             </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Main Card */}
+      <div className="w-full max-w-lg">
+
+        {/* Loading */}
+        {isLoading && (
+          <div className="bg-white/10 border border-pink-500/40 rounded-2xl p-10 text-center">
+            <p className="text-white/70 text-sm">Loading question...</p>
           </div>
         )}
 
-        {gamePhase === 'answering' && currentQuestion && (
+        {/* Question Phase */}
+        {!isLoading && currentQuestion && !showAnswer && (
           <div className="space-y-4">
-            <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
-              <div className="text-center mb-3">
-                <span className="bg-purple-500 text-white px-3 py-1 rounded-full text-xs font-semibold">
-                  {currentQuestion.category?.toUpperCase() || 'QUESTION'}
-                </span>
-              </div>
-              <p className="text-gray-800 text-center font-medium">
-                {currentQuestion.text}
-              </p>
-            </div>
-
-            <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-              <label className="text-purple-600 text-base font-semibold mb-3 block">Your confession:</label>
-              <textarea
-                value={myAnswer}
-                onChange={(e) => setMyAnswer(e.target.value)}
-                placeholder="Be detailed, honest, and creative for more points..."
-                rows={4}
-                className="w-full bg-white text-gray-800 placeholder-gray-400 px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 resize-none text-base border border-gray-300"
-              />
-              <div className="text-sm text-gray-600 mt-2 font-medium">
-                {myAnswer.length} characters • Quality + Speed = Points
-              </div>
-            </div>
-
-            <button
-              onClick={handleSubmitAnswer}
-              disabled={!myAnswer.trim() || mySubmitTime !== null}
-              className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition disabled:opacity-50"
-            >
-              {mySubmitTime ? '✅ Submitted' : '⚡ Submit Answer'}
-            </button>
-
-            {partnerAnswer && (
-              <div className="bg-blue-50 rounded-xl p-3 text-center border border-blue-200">
-                <p className="text-blue-600 text-sm font-medium">✅ {partnerName} has answered</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {gamePhase === 'results' && !gameEnded && (
-          <div className="space-y-4">
-            <h3 className="text-gray-800 text-xl font-bold text-center">Round Results</h3>
-            
-            {roundWinner && (
-              <div className="bg-yellow-50 rounded-xl p-4 border border-yellow-200 text-center">
-                <h4 className="text-yellow-600 font-bold text-lg mb-2">🏆 Round Winner</h4>
-                <p className="text-gray-800 font-bold text-lg">
-                  {room.players.find(p => p.id === roundWinner)?.name}
+            {/* Question Card */}
+            <div className="relative bg-white/10 border border-pink-500/40 rounded-2xl p-6 overflow-hidden">
+              <div className={`absolute inset-0 bg-gradient-to-br ${activeCat.color} opacity-5 rounded-2xl`} />
+              <div className="relative">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">{activeCat.emoji}</span>
+                  <span className="text-xs font-bold uppercase tracking-widest text-pink-300">
+                    {activeCat.label}
+                  </span>
+                </div>
+                <p className="text-white text-lg font-medium leading-relaxed">
+                  {currentQuestion.text}
                 </p>
               </div>
+            </div>
+
+            {/* Answer Input */}
+            <div className="bg-white/10 border border-white/20 rounded-2xl p-4">
+              <label className="text-xs text-pink-300 uppercase tracking-widest mb-2 block">Your Confession</label>
+              <textarea
+                value={answer}
+                onChange={e => setAnswer(e.target.value)}
+                placeholder="Be honest, be bold, be you..."
+                rows={4}
+                className="w-full bg-transparent text-white placeholder-white/40 text-sm focus:outline-none resize-none"
+              />
+              <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/10">
+                <span className="text-xs text-white/50">{answer.length} chars</span>
+                <button
+                  onClick={handleSubmitAnswer}
+                  disabled={!answer.trim()}
+                  className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200
+                    ${answer.trim()
+                      ? `bg-gradient-to-r ${activeCat.color} text-white shadow-lg hover:scale-105`
+                      : 'bg-white/10 text-white/50 cursor-not-allowed'
+                    }`}
+                >
+                  💌 Submit
+                </button>
+              </div>
+            </div>
+
+            {/* Skip */}
+            <button
+              onClick={handleNextRound}
+              className="w-full text-xs text-white/50 hover:text-white/80 transition py-1"
+            >
+              Skip this question →
+            </button>
+          </div>
+        )}
+
+        {/* Answer Reveal Phase */}
+        {!isLoading && showAnswer && (
+          <div className="space-y-4">
+            {/* Question recap */}
+            <div className="bg-white/10 border border-white/20 rounded-xl px-4 py-3">
+              <p className="text-white/60 text-xs mb-1">Question</p>
+              <p className="text-white/80 text-sm">{currentQuestion?.text}</p>
+            </div>
+
+            {/* Your answer */}
+            <div className="bg-white/10 border border-pink-500/40 rounded-2xl p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-xs font-bold text-white">
+                  {room.players.find(p => p.id === playerId)?.name?.[0]?.toUpperCase() || 'Y'}
+                </div>
+                <span className="text-pink-300 text-sm font-semibold">Your Confession</span>
+              </div>
+              <p className="text-white text-sm leading-relaxed">{answer}</p>
+            </div>
+
+            {/* Partner answer */}
+            {partnerAnswer ? (
+              <div className="bg-white/10 border border-purple-500/40 rounded-2xl p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-xs font-bold text-white">
+                    {room.players.find(p => p.id !== playerId)?.name?.[0]?.toUpperCase() || 'P'}
+                  </div>
+                  <span className="text-purple-300 text-sm font-semibold">
+                    {room.players.find(p => p.id !== playerId)?.name || 'Partner'}'s Confession
+                  </span>
+                </div>
+                <p className="text-white text-sm leading-relaxed">{partnerAnswer}</p>
+              </div>
+            ) : (
+              <div className="bg-white/10 border border-white/20 rounded-2xl p-5 text-center">
+                <p className="text-white/70 text-sm">⏳ Waiting for partner's confession...</p>
+              </div>
             )}
-            
-            <div className="space-y-3">
-              <div className="bg-pink-50 rounded-xl p-4 border border-pink-200">
-                <div className="flex justify-between items-center mb-2">
-                  <h4 className="text-pink-600 font-bold text-base">{playerName}:</h4>
-                  <span className="text-pink-600 text-base font-bold">
-                    {answerQuality.find(a => a.playerId === playerId)?.score || 0} pts
-                  </span>
-                </div>
-                <p className="text-gray-700 text-base">{myAnswer}</p>
+
+            {/* Winner banner */}
+            {winner && partnerAnswer && (
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl px-4 py-3 text-center">
+                <span className="text-yellow-300 text-sm font-semibold">
+                  🏆 {room.players.find(p => p.id === winner)?.name} answered first!
+                </span>
               </div>
+            )}
 
-              <div className="bg-purple-50 rounded-xl p-4 border border-purple-200">
-                <div className="flex justify-between items-center mb-2">
-                  <h4 className="text-purple-600 font-bold text-base">{partnerName}:</h4>
-                  <span className="text-purple-600 text-base font-bold">
-                    {answerQuality.find(a => a.playerId !== playerId)?.score || 0} pts
-                  </span>
+            {/* Vote + Next */}
+            {partnerAnswer && (
+              <>
+                <div className="bg-white/10 border border-yellow-500/30 rounded-2xl p-4">
+                  <p className="text-yellow-300 text-xs uppercase tracking-widest text-center mb-3">Vote for best confession</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {room.players.map(player => (
+                      <button
+                        key={player.id}
+                        onClick={() => handleVoteWinner(player.id)}
+                        className="bg-white/10 hover:bg-gradient-to-r hover:from-pink-500 hover:to-rose-500 border border-white/20 hover:border-transparent text-white py-3 rounded-xl text-sm font-semibold transition-all duration-200"
+                      >
+                        {player.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <p className="text-gray-700 text-base">{partnerAnswer}</p>
-              </div>
-            </div>
 
-            <div className="bg-gray-50 rounded-xl p-3 border border-gray-200">
-              <p className="text-gray-600 text-sm text-center font-medium">
-                Points: Length + Keywords + Creativity + Speed Bonus (5pts)
-              </p>
-            </div>
-
-            {isHost && (
-              <button
-                onClick={handleNextRound}
-                className="w-full bg-gradient-to-r from-purple-500 to-indigo-500 text-white py-4 rounded-xl font-bold text-lg hover:shadow-lg transition"
-              >
-                🎯 Next Round ({roundNumber + 1}/{MAX_ROUNDS})
-              </button>
+                <button
+                  onClick={handleNextRound}
+                  className={`w-full bg-gradient-to-r ${activeCat.color} text-white py-4 rounded-2xl font-semibold text-base hover:scale-[1.02] transition-all duration-200 shadow-lg`}
+                >
+                  Next Question →
+                </button>
+              </>
             )}
           </div>
         )}
 
-        {gamePhase === 'results' && gameEnded && (
-          <div className="space-y-6">
-            <div className="text-center">
-              <div className="text-6xl mb-4">🏆</div>
-              <h2 className="text-3xl font-bold text-gray-800 mb-2">Game Complete!</h2>
-              <p className="text-purple-600 text-lg font-medium">Final Results</p>
-            </div>
-
-            <div className="bg-gradient-to-r from-yellow-50 to-orange-50 rounded-2xl p-6 border-2 border-yellow-200">
-              <h3 className="text-2xl font-bold text-center mb-4 text-gray-800">🎉 Winner</h3>
-              <div className="text-center">
-                {(() => {
-                  const myTotalScore = scores[playerId] || 0;
-                  const partnerTotalScore = scores[room.players.find(p => p.id !== playerId)?.id || ''] || 0;
-                  const winner = myTotalScore > partnerTotalScore ? playerName : 
-                                myTotalScore < partnerTotalScore ? partnerName : 'Tie';
-                  
-                  if (winner === 'Tie') {
-                    return (
-                      <div>
-                        <p className="text-3xl font-bold text-purple-600 mb-2">It's a Tie! 🤝</p>
-                        <p className="text-gray-600">Both players scored {myTotalScore} points</p>
-                      </div>
-                    );
-                  }
-                  
-                  return (
-                    <div>
-                      <p className="text-4xl font-bold text-yellow-600 mb-2">{winner}</p>
-                      <p className="text-gray-600 text-lg">
-                        {winner === playerName ? myTotalScore : partnerTotalScore} points
-                      </p>
+        {/* Scoreboard */}
+        {Object.keys(scores).length > 0 && (
+          <div className="mt-5 bg-white/10 border border-green-500/30 rounded-2xl p-4">
+            <p className="text-green-400 text-xs uppercase tracking-widest text-center mb-3">Scoreboard</p>
+            <div className="space-y-2">
+              {room.players
+                .slice()
+                .sort((a, b) => (scores[b.id] || 0) - (scores[a.id] || 0))
+                .map((player, i) => (
+                  <div key={player.id} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-white/60 text-xs w-4">{i + 1}.</span>
+                      <span className="text-white text-sm">{player.name}</span>
                     </div>
-                  );
-                })()} 
-              </div>
-            </div>
-
-            <div className="bg-gray-50 rounded-2xl p-6 border border-gray-200">
-              <h4 className="text-xl font-bold text-gray-800 mb-4 text-center">Final Scores</h4>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg border border-green-200">
-                  <span className="font-bold text-green-700">{playerName}</span>
-                  <span className="font-bold text-green-700 text-xl">{scores[playerId] || 0} pts</span>
-                </div>
-                <div className="flex justify-between items-center p-3 bg-purple-50 rounded-lg border border-purple-200">
-                  <span className="font-bold text-purple-700">{partnerName}</span>
-                  <span className="font-bold text-purple-700 text-xl">{scores[room.players.find(p => p.id !== playerId)?.id || ''] || 0} pts</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-blue-50 rounded-2xl p-6 border border-blue-200">
-              <h4 className="text-lg font-bold text-blue-700 mb-3 text-center">Game Stats</h4>
-              <div className="grid grid-cols-2 gap-4 text-center">
-                <div>
-                  <p className="text-2xl font-bold text-blue-600">{MAX_ROUNDS}</p>
-                  <p className="text-blue-600 text-sm">Rounds Played</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-blue-600">{Object.keys(usedQuestions).length}</p>
-                  <p className="text-blue-600 text-sm">Questions Asked</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="text-center space-y-3">
-              <p className="text-gray-600 font-medium">Thanks for playing Intimate Confessions! 💕</p>
-              <button
-                onClick={() => window.location.reload()}
-                className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-8 py-3 rounded-xl font-bold hover:shadow-lg transition"
-              >
-                🎮 Play Again
-              </button>
+                    <span className="text-green-400 font-bold text-sm">{scores[player.id] || 0} pts</span>
+                  </div>
+                ))}
             </div>
           </div>
         )}

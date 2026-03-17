@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { motion } from 'framer-motion'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 export default function ForgotPasswordPage() {
+  const router = useRouter()
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
@@ -28,82 +29,97 @@ export default function ForgotPasswordPage() {
         const data = await response.json()
         setError(data.error || 'Something went wrong')
       }
-    } catch (error) {
+    } catch {
       setError('Network error. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
-  if (sent) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-rose-100 to-pink-100 flex items-center justify-center p-4">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md text-center"
-        >
-          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-2xl">📧</span>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">Check Your Email</h1>
-          <p className="text-gray-600">
-            We've sent a password reset link to {email}
-          </p>
-        </motion.div>
-      </div>
-    )
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-rose-100 to-pink-100 flex items-center justify-center p-4">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md"
-      >
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">Forgot Password?</h1>
-          <p className="text-gray-600">Enter your email to reset your password</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Email Address
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-              placeholder="Enter your email"
-              required
-            />
-          </div>
-
-          {error && (
-            <div className="text-red-500 text-sm text-center">{error}</div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-rose-500 hover:bg-rose-600 text-white py-3 rounded-lg font-medium transition-colors disabled:opacity-50"
-          >
-            {loading ? 'Sending...' : 'Send Reset Link'}
+    <div className="min-h-screen bg-white">
+      {/* Nav */}
+      <nav className="border-b border-gray-100 sticky top-0 bg-white/90 backdrop-blur-md z-50">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+          <button onClick={() => router.push('/')} className="flex items-center gap-2">
+            <span className="text-xl">💕</span>
+            <span className="font-bold text-gray-900 text-lg">Couple Connect</span>
           </button>
-        </form>
-
-        <div className="text-center mt-6">
-          <Link
-            href="/login"
-            className="text-rose-500 hover:text-rose-600 text-sm"
-          >
-            Back to Login
+          <Link href="/login" className="text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors">
+            ← Back to login
           </Link>
         </div>
-      </motion.div>
+      </nav>
+
+      <div className="flex items-center justify-center min-h-[calc(100vh-65px)] px-4 py-12">
+        <div className="w-full max-w-md animate-fadeIn">
+
+          {sent ? (
+            <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-10 text-center">
+              <div className="w-12 h-12 bg-pink-50 border border-pink-100 rounded-xl flex items-center justify-center mx-auto mb-5">
+                <span className="text-2xl">📧</span>
+              </div>
+              <h1 className="text-xl font-bold text-gray-900 mb-2">Check your email</h1>
+              <p className="text-gray-500 text-sm">
+                We've sent a password reset link to <span className="font-medium text-gray-700">{email}</span>
+              </p>
+              <Link
+                href="/login"
+                className="inline-block mt-6 text-sm font-medium text-pink-600 hover:text-pink-700 transition-colors"
+              >
+                Back to Sign In
+              </Link>
+            </div>
+          ) : (
+            <>
+              <div className="text-center mb-8">
+                <h1 className="text-2xl font-bold text-gray-900">Forgot your password?</h1>
+                <p className="text-gray-500 text-sm mt-1">Enter your email and we'll send you a reset link</p>
+              </div>
+
+              <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8">
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Email Address</label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-400 focus:border-transparent transition-all bg-white"
+                      placeholder="Enter your email"
+                      required
+                    />
+                  </div>
+
+                  {error && (
+                    <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm">
+                      {error}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full bg-gray-900 hover:bg-gray-700 text-white font-semibold py-3 rounded-xl text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? 'Sending...' : 'Send Reset Link'}
+                  </button>
+                </form>
+
+                <div className="text-center mt-5 pt-5 border-t border-gray-100">
+                  <Link href="/login" className="text-sm text-pink-600 hover:text-pink-700 font-medium transition-colors">
+                    Back to Sign In
+                  </Link>
+                </div>
+              </div>
+            </>
+          )}
+
+          <p className="text-center text-gray-400 text-xs mt-6">
+            Made with 💕 for long-distance couples worldwide
+          </p>
+        </div>
+      </div>
     </div>
   )
 }

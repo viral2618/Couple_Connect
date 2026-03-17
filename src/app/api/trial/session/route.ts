@@ -1,100 +1,40 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
+import { getSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 
-const TRIAL_DURATION = 20 * 60 // 20 minutes in seconds
+export const dynamic = 'force-dynamic'
 
-export async function POST(request: NextRequest) {
+const TRIAL_DAYS = 14
+
+export async function GET() {
   try {
-    const { fingerprint, resetTimer } = await request.json()
-
-    if (!fingerprint) {
-      return NextResponse.json({ error: 'Fingerprint required' }, { status: 400 })
+    const session = await getSession()
+    if (!session.isLoggedIn) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
     }
 
-    // Check if session exists
-    let session = await prisma.trialSession.findUnique({
-      where: { fingerprint }
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { trialStartedAt: true, isPremium: true }
     })
 
-    if (!session) {
-      // Create new session
-      session = await prisma.trialSession.create({
-        data: {
-          fingerprint,
-          usedSeconds: 0
-        }
-      })
-    } else if (resetTimer && session.usedSeconds < TRIAL_DURATION) {
-      // Only allow reset if trial hasn't been fully used
-      session = await prisma.trialSession.update({
-        where: { fingerprint },
-        data: { usedSeconds: 0 }
-      })
-    } else if (resetTimer && session.usedSeconds >= TRIAL_DURATION) {
-      // Trial already fully used, cannot reset
-      return NextResponse.json({
-        timeRemaining: 0,
-        isExpired: true,
-        trialExhausted: true,
-        sessionId: session.id
-      })
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    const timeRemaining = Math.max(0, TRIAL_DURATION - session.usedSeconds)
-    const isExpired = timeRemaining === 0
-
-    return NextResponse.json({
-      timeRemaining,
-      isExpired,
-      trialExhausted: session.usedSeconds >= TRIAL_DURATION,
-      sessionId: session.id
-    })
-  } catch (error) {
-    console.error('Trial session error:', error)
-    return NextResponse.json({ error: 'Failed to manage trial session' }, { status: 500 })
-  }
-}
-
-export async function PUT(request: NextRequest) {
-  try {
-    const { fingerprint, secondsUsed } = await request.json()
-
-    if (!fingerprint || typeof secondsUsed !== 'number') {
-      return NextResponse.json({ error: 'Invalid parameters' }, { status: 400 })
-    }
-
-    // Update session with server-side validation
-    const session = await prisma.trialSession.findUnique({
-      where: { fingerprint }
-    })
-
-    if (!session) {
-      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
-    }
-
-    // Calculate time since last update to prevent manipulation
+    const trialEndsAt = new Date((user.trialStartedAt ?? new Date()).getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000)
     const now = new Date()
-    const timeSinceUpdate = Math.floor((now.getTime() - session.updatedAt.getTime()) / 1000)
-    const maxAllowedIncrease = Math.min(timeSinceUpdate + 5, 65) // Allow 5s buffer, max 65s per update
-
-    const actualSecondsToAdd = Math.min(secondsUsed, maxAllowedIncrease)
-    const newUsedSeconds = Math.min(session.usedSeconds + actualSecondsToAdd, TRIAL_DURATION)
-
-    await prisma.trialSession.update({
-      where: { fingerprint },
-      data: { usedSeconds: newUsedSeconds }
-    })
-
-    const timeRemaining = Math.max(0, TRIAL_DURATION - newUsedSeconds)
-    const isExpired = timeRemaining === 0
+    const daysRemaining = Math.max(0, Math.ceil((trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
 
     return NextResponse.json({
-      timeRemaining,
-      isExpired,
-      usedSeconds: newUsedSeconds
+      isPremium: user.isPremium,
+      isActive: !user.isPremium && daysRemaining > 0,
+      isExpired: !user.isPremium && daysRemaining === 0,
+      daysRemaining,
+      endsAt: trialEndsAt.toISOString()
     })
   } catch (error) {
-    console.error('Trial session update error:', error)
-    return NextResponse.json({ error: 'Failed to update trial session' }, { status: 500 })
+    console.error('Trial status error:', error)
+    return NextResponse.json({ error: 'Failed to get trial status' }, { status: 500 })
   }
 }

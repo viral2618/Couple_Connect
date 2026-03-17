@@ -36,9 +36,10 @@ interface FullPageChatProps {
     name: string
     avatar?: string
   }
+  onBack?: () => void
 }
 
-export default function FullPageChat({ currentUser, partner }: FullPageChatProps) {
+export default function FullPageChat({ currentUser, partner, onBack }: FullPageChatProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [socket, setSocket] = useState<Socket | null>(null)
@@ -85,14 +86,10 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
 
     socketInstance.on('receive-message', (message: Message) => {
       console.log('Received message:', message)
-      // Only add message if it's not from current user (to avoid duplicates)
-      if (message.senderId !== currentUser.id) {
-        setMessages(prev => {
-          // Check if message already exists
-          if (prev.some(m => m.id === message.id)) return prev
-          return [...prev, message]
-        })
-      }
+      setMessages(prev => {
+        if (prev.some(m => m.id === message.id)) return prev
+        return [...prev, message]
+      })
     })
 
     socketInstance.on('message-reaction', (data: { messageId: string; reactions: { emoji: string; userId: string }[] }) => {
@@ -150,53 +147,35 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
   }
 
   const sendMessage = async () => {
+    console.log('Send button clicked!')
+    console.log('newMessage:', newMessage)
+    console.log('newMessage.trim():', newMessage.trim())
+    console.log('canChat:', canChat)
+    
     if (!newMessage.trim() || !canChat) {
+      console.log('Cannot send message:', { newMessage: newMessage.trim(), canChat })
       return
     }
 
-    const messageContent = newMessage.trim()
-    const tempId = `temp-${Date.now()}-${Math.random()}`
-    
-    // Create optimistic message for instant display
-    const optimisticMessage: Message = {
-      id: tempId,
-      content: messageContent,
-      senderId: currentUser.id,
-      receiverId: partner.id,
-      createdAt: new Date().toISOString(),
-      replyTo: replyingTo?.id,
-      sender: {
-        id: currentUser.id,
-        name: currentUser.name,
-        avatar: currentUser.avatar
-      }
-    }
-
-    // Add message to UI immediately
-    setMessages(prev => [...prev, optimisticMessage])
-    setNewMessage('')
-    setReplyingTo(null)
-
+    console.log('Sending message:', newMessage)
     try {
       const response = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          content: messageContent, 
+          content: newMessage, 
           receiverId: partner.id,
           replyTo: replyingTo?.id
         })
       })
 
+      console.log('API response status:', response.status)
       if (response.ok) {
         const savedMessage = await response.json()
+        console.log('Saved message:', savedMessage)
         
-        // Replace optimistic message with real message
-        setMessages(prev => prev.map(msg => 
-          msg.id === tempId ? savedMessage : msg
-        ))
-        
-        // Send to partner via socket
+        setMessages(prev => [...prev, savedMessage])
+
         if (socket) {
           const roomId = [currentUser.id, partner.id].sort().join('-')
           socket.emit('send-message', {
@@ -204,16 +183,14 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
             roomId
           })
         }
+        
+        setNewMessage('')
+        setReplyingTo(null)
       } else {
-        // Remove optimistic message on error
-        setMessages(prev => prev.filter(msg => msg.id !== tempId))
-        setNewMessage(messageContent) // Restore message text
-        console.error('Failed to send message')
+        const errorData = await response.json()
+        console.error('API error:', errorData)
       }
     } catch (error) {
-      // Remove optimistic message on error
-      setMessages(prev => prev.filter(msg => msg.id !== tempId))
-      setNewMessage(messageContent) // Restore message text
       console.error('Failed to send message:', error)
     }
   }
@@ -267,7 +244,11 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
     return (
       <div className="h-full flex items-center justify-center bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 p-4">
         <div className="text-center p-6 sm:p-8 bg-white/90 backdrop-blur-md rounded-3xl shadow-xl border border-rose-200/50 max-w-md mx-auto">
-          <span className="text-4xl sm:text-6xl mb-4 block">🚫</span>
+          <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+          </div>
           <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-3">Cannot Chat</h3>
           <p className="text-rose-600 mb-4 font-medium text-sm sm:text-base">{partnershipError}</p>
           <p className="text-xs sm:text-sm text-gray-600">Make sure both users are verified and have completed the partner verification process.</p>
@@ -277,16 +258,17 @@ export default function FullPageChat({ currentUser, partner }: FullPageChatProps
   }
 
   return (
-    <div className="h-full flex flex-col bg-gradient-to-br from-rose-50/80 via-pink-50/80 to-purple-50/80">
+    <div className="h-full flex flex-col">
       {isVideoCallActive && (
         <VideoCall 
           roomId={[currentUser.id, partner.id].sort().join('-')}
           userId={currentUser.id}
+          isPremium={false}
           onClose={endVideoCall}
         />
       )}
       
-      <ChatHeader partner={partner} isOnline={isOnline} onVideoCall={startVideoCall} currentUser={currentUser} />
+      <ChatHeader partner={partner} isOnline={isOnline} onVideoCall={startVideoCall} onBack={onBack} />
       
       <div className="flex-1 overflow-hidden relative">
         <MessageList 

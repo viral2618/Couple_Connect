@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { useAuth } from '@/contexts/AuthContext'
-import { useTrialTimer } from '@/hooks/useTrialTimer'
+import { useTrialStatus } from '@/hooks/useTrialTimer'
 import { TrialBanner } from '@/components/TrialBanner'
 import { TrialModal } from '@/components/TrialModal'
 import FullPageChat from '@/components/FullPageChat'
@@ -36,24 +36,7 @@ export default function ChatPage() {
   const [fingerprint, setFingerprint] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   
-  // Trial session logic - only show if user is not verified
-  const shouldShowTrial = user && !user.isVerified
-  const { timeRemaining, isExpired } = useTrialTimer(shouldShowTrial ? fingerprint : null)
-  const [showTrialModal, setShowTrialModal] = useState(false)
-
-  // Generate device fingerprint for trial users
-  useEffect(() => {
-    if (shouldShowTrial && typeof window !== 'undefined') {
-      generateFingerprint().then(setFingerprint)
-    }
-  }, [shouldShowTrial])
-
-  // Show trial modal when time is running low or expired
-  useEffect(() => {
-    if (shouldShowTrial && (timeRemaining <= 300 || isExpired)) { // Show when 5 minutes or less
-      setShowTrialModal(true)
-    }
-  }, [shouldShowTrial, timeRemaining, isExpired])
+  const { isOnTrial, isExpired: isTrialExpired, daysRemaining } = useTrialStatus()
 
   const generateVerificationCode = () => {
     return Math.floor(100000 + Math.random() * 900000).toString()
@@ -237,21 +220,10 @@ export default function ChatPage() {
   if (verifiedPartner) {
     return (
       <div className="h-screen flex flex-col bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50">
-        {/* Trial Banner - only show for unverified users */}
-        {shouldShowTrial && (
-          <TrialBanner 
-            timeRemaining={timeRemaining}
-            onSignUp={() => router.push('/login')}
-          />
+        {isOnTrial && (
+          <TrialBanner daysRemaining={daysRemaining} onUpgrade={() => router.push('/login')} />
         )}
-        
-        {/* Trial Modal - only show for unverified users */}
-        {shouldShowTrial && (
-          <TrialModal 
-            isOpen={showTrialModal}
-            timeRemaining={timeRemaining}
-          />
-        )}
+        <TrialModal isOpen={isTrialExpired} />
         
         {/* Minimal Header for Chat */}
         <header className="bg-white/90 backdrop-blur-md border-b border-rose-200/50 z-40 flex-shrink-0">
@@ -286,7 +258,11 @@ export default function ChatPage() {
         {/* Full Screen Chat */}
         <div className="flex-1 overflow-hidden">
           <FullPageChat 
-            currentUser={user}
+            currentUser={{
+              id: user.id,
+              name: user.name,
+              avatar: user.avatar ?? undefined
+            }}
             partner={{
               id: verifiedPartner.id,
               name: verifiedPartner.name,
@@ -300,21 +276,10 @@ export default function ChatPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50">
-      {/* Trial Banner - only show for unverified users */}
-      {shouldShowTrial && (
-        <TrialBanner 
-          timeRemaining={timeRemaining}
-          onSignUp={() => router.push('/login')}
-        />
+      {isOnTrial && (
+        <TrialBanner daysRemaining={daysRemaining} onUpgrade={() => router.push('/login')} />
       )}
-      
-      {/* Trial Modal - only show for unverified users */}
-      {shouldShowTrial && (
-        <TrialModal 
-          isOpen={showTrialModal}
-          timeRemaining={timeRemaining}
-        />
-      )}
+      <TrialModal isOpen={isTrialExpired} />
       
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-md border-b border-rose-200/50 sticky top-0 z-40">

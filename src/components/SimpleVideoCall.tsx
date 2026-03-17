@@ -6,10 +6,11 @@ import { io, Socket } from 'socket.io-client'
 interface SimpleVideoCallProps {
   roomId: string
   userId: string
+  isPremium: boolean
   onClose: () => void
 }
 
-export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideoCallProps) {
+export default function SimpleVideoCall({ roomId, userId, isPremium, onClose }: SimpleVideoCallProps) {
   const [isMuted, setIsMuted] = useState(false)
   const [isVideoOff, setIsVideoOff] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -31,18 +32,24 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
 
   const initCall = async () => {
     try {
-      // Get user media first
+      // Get user media — premium gets 1080p, standard gets 480p
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280, max: 1920 },
-          height: { ideal: 720, max: 1080 },
-          frameRate: { ideal: 30, max: 60 },
+        video: isPremium ? {
+          width: { ideal: 1920, max: 1920 },
+          height: { ideal: 1080, max: 1080 },
+          frameRate: { ideal: 30, max: 30 },
+          facingMode: 'user'
+        } : {
+          width: { ideal: 640, max: 854 },
+          height: { ideal: 480, max: 480 },
+          frameRate: { ideal: 24, max: 24 },
           facingMode: 'user'
         },
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          ...(isPremium ? { sampleRate: 48000, channelCount: 1 } : {})
         }
       })
 
@@ -118,6 +125,23 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
     }
   }
 
+  const applyBitrate = (pc: RTCPeerConnection) => {
+    pc.getSenders().forEach(sender => {
+      if (!sender.track) return
+      const params = sender.getParameters()
+      if (!params.encodings || params.encodings.length === 0) {
+        params.encodings = [{}]
+      }
+      if (sender.track.kind === 'video') {
+        params.encodings[0].maxBitrate = isPremium ? 2_500_000 : 400_000  // 2.5 Mbps premium / 400 kbps standard
+        params.encodings[0].maxFramerate = isPremium ? 30 : 24
+      } else if (sender.track.kind === 'audio') {
+        params.encodings[0].maxBitrate = isPremium ? 128_000 : 32_000     // 128 kbps premium / 32 kbps standard
+      }
+      sender.setParameters(params).catch(() => {})
+    })
+  }
+
   const createPeerConnection = () => {
     if (peerConnectionRef.current) {
       console.log('[WebRTC] Peer connection already exists')
@@ -128,9 +152,13 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' }
       ],
-      iceCandidatePoolSize: 10
+      iceCandidatePoolSize: 10,
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require'
     }
 
     const pc = new RTCPeerConnection(config)
@@ -168,6 +196,7 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
       if (pc.connectionState === 'connected') {
         setIsConnecting(false)
         setError(null)
+        applyBitrate(pc)
       } else if (pc.connectionState === 'failed') {
         setError('Connection failed')
       }
@@ -177,6 +206,26 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
     return pc
   }
 
+  const preferCodec = (sdp: string): string => {
+    if (!isPremium) return sdp  // standard users get browser default codec
+    // Premium: prefer VP9 then H264 over VP8
+    const lines = sdp.split('\r\n')
+    const videoLine = lines.find(l => l.startsWith('m=video'))
+    if (!videoLine) return sdp
+
+    const payloads = videoLine.split(' ').slice(3)
+    const vp9 = lines.find(l => /a=rtpmap:\d+ VP9/.test(l))?.match(/a=rtpmap:(\d+) VP9/)?.[1]
+    const h264 = lines.find(l => /a=rtpmap:\d+ H264/.test(l))?.match(/a=rtpmap:(\d+) H264/)?.[1]
+
+    const preferred = [vp9, h264].filter(Boolean) as string[]
+    const rest = payloads.filter(p => !preferred.includes(p))
+    const reordered = [...preferred, ...rest]
+
+    return lines.map(l =>
+      l.startsWith('m=video') ? `m=video ${videoLine.split(' ')[1]} ${videoLine.split(' ')[2]} ${reordered.join(' ')}` : l
+    ).join('\r\n')
+  }
+
   const createOffer = async () => {
     try {
       if (makingOfferRef.current) return
@@ -184,7 +233,9 @@ export default function SimpleVideoCall({ roomId, userId, onClose }: SimpleVideo
 
       const pc = createPeerConnection()
       const offer = await pc.createOffer()
-      await pc.setLocalDescription(offer)
+      const modifiedSdp = preferCodec(offer.sdp || '')
+      const modifiedOffer = new RTCSessionDescription({ type: offer.type, sdp: modifiedSdp })
+      await pc.setLocalDescription(modifiedOffer)
 
       socketRef.current?.emit('offer', {
         roomId,

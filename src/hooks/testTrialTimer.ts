@@ -1,4 +1,4 @@
-import { useTrialTimer } from './useTrialTimer'
+import { useTrialStatus } from './useTrialTimer'
 
 // Simple test runner to verify the hook functionality
 class TrialTimerTester {

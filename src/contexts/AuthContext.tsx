@@ -7,7 +7,15 @@ interface User {
   id: string
   name: string
   email: string
+  avatar?: string | null
   isVerified: boolean
+  isPremium: boolean
+  trial: {
+    isActive: boolean
+    isExpired: boolean
+    daysRemaining: number
+    endsAt: string
+  }
   partner?: {
     id: string
     name: string

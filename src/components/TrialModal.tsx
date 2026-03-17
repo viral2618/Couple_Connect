@@ -1,75 +1,98 @@
 'use client'
 
-import { motion, AnimatePresence } from 'framer-motion'
-import { useRouter } from 'next/navigation'
-
 interface TrialModalProps {
   isOpen: boolean
-  timeRemaining: number
+  onClose?: () => void
 }
 
-export function TrialModal({ isOpen, timeRemaining }: TrialModalProps) {
-  const router = useRouter()
-  const minutes = Math.floor(timeRemaining / 60)
-  const seconds = timeRemaining % 60
+export function TrialModal({ isOpen, onClose }: TrialModalProps) {
+  if (!isOpen) return null
 
-  const isExpired = timeRemaining === 0
+  const plans = [
+    {
+      name: 'Monthly',
+      price: '$9.99',
+      period: '/mo',
+      highlight: false,
+    },
+    {
+      name: 'Yearly',
+      price: '$4.99',
+      period: '/mo',
+      badge: 'Best Value',
+      sub: 'billed $59.99/yr',
+      highlight: true,
+    },
+  ]
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
-            onClick={isExpired ? undefined : () => {}}
-          />
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 z-50"
-          >
-            <div className="text-center">
-              <div className="text-6xl mb-4">{isExpired ? '⏰' : '⚠️'}</div>
-              <h2 className="text-3xl font-bold text-gray-800 mb-4">
-                {isExpired ? 'Trial Expired' : 'Trial Ending Soon'}
-              </h2>
-              
-              {!isExpired && (
-                <div className="text-5xl font-bold text-rose-500 mb-4">
-                  {minutes}:{seconds.toString().padStart(2, '0')}
-                </div>
-              )}
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden">
+        {/* Header */}
+        <div className="bg-gradient-to-br from-pink-500 via-rose-500 to-violet-600 px-8 pt-8 pb-10 text-center relative">
+          <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg">
+            <span className="text-xl">💎</span>
+          </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 text-white/60 hover:text-white transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+          <h2 className="text-2xl font-extrabold text-white mb-1">Upgrade to Premium</h2>
+          <p className="text-pink-100 text-sm">Keep your connection alive — no limits, forever.</p>
+        </div>
 
-              <p className="text-gray-600 mb-6 text-lg">
-                {isExpired
-                  ? 'Your 20-minute trial has ended. Sign up to continue enjoying all features!'
-                  : `Only ${minutes} minute${minutes !== 1 ? 's' : ''} left! Sign up now to keep your connection alive.`}
-              </p>
+        <div className="px-8 pt-10 pb-8">
+          {/* Features */}
+          <ul className="space-y-2 mb-7">
+            {['Unlimited messaging', 'HD video calls', 'All couple games', 'Photo sharing & memories', 'Priority support'].map((f) => (
+              <li key={f} className="flex items-center gap-2.5 text-sm text-gray-700">
+                <span className="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center shrink-0">
+                  <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                </span>
+                {f}
+              </li>
+            ))}
+          </ul>
 
-              <div className="space-y-3">
-                <button
-                  onClick={() => router.push('/login')}
-                  className="w-full bg-rose-500 hover:bg-rose-600 text-white px-6 py-4 rounded-xl font-semibold text-lg transition-all shadow-lg"
-                >
-                  {isExpired ? 'Sign Up to Continue' : 'Sign Up Now'}
-                </button>
-                {!isExpired && (
-                  <button
-                    onClick={() => {}}
-                    className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-3 rounded-xl font-medium transition-all"
-                  >
-                    Continue Trial
-                  </button>
+          {/* Plans */}
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            {plans.map((plan) => (
+              <button
+                key={plan.name}
+                className={`relative rounded-2xl border-2 p-4 text-center transition-all hover:scale-[1.02] active:scale-[0.98]
+                  ${plan.highlight
+                    ? 'border-violet-500 bg-violet-50'
+                    : 'border-gray-200 bg-gray-50 hover:border-gray-300'
+                  }`}
+              >
+                {plan.badge && (
+                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-violet-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap">
+                    {plan.badge}
+                  </span>
                 )}
-              </div>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+                <p className={`text-xs font-semibold mb-1 ${plan.highlight ? 'text-violet-600' : 'text-gray-500'}`}>{plan.name}</p>
+                <p className={`text-2xl font-extrabold ${plan.highlight ? 'text-violet-700' : 'text-gray-800'}`}>
+                  {plan.price}<span className="text-sm font-medium">{plan.period}</span>
+                </p>
+                {plan.sub && <p className="text-[10px] text-gray-400 mt-0.5">{plan.sub}</p>}
+              </button>
+            ))}
+          </div>
+
+          <button className="w-full bg-gradient-to-r from-pink-500 to-violet-600 hover:opacity-90 text-white font-bold py-3.5 rounded-2xl text-sm transition-all hover:shadow-lg hover:shadow-pink-200 active:scale-[0.98]">
+            Start Premium Today
+          </button>
+          <p className="text-center text-xs text-gray-400 mt-3">Cancel anytime · Secure payment</p>
+        </div>
+      </div>
+    </div>
   )
 }

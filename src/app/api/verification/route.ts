@@ -3,6 +3,41 @@ import { prisma } from '@/lib/prisma'
 import crypto from 'crypto'
 import { getSession } from '@/lib/session'
 
+// GET: Return any pending incoming verification request for the logged-in user
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getSession()
+    if (!session.isLoggedIn || !session.userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Find any code stored by someone targeting the current user
+    const pending = await prisma.verificationCode.findFirst({
+      where: {
+        partnerId: session.userId,
+        expiresAt: { gt: new Date() }
+      }
+    })
+
+    if (!pending) {
+      return NextResponse.json({ hasPendingRequest: false })
+    }
+
+    const requester = await prisma.user.findUnique({
+      where: { id: pending.userId },
+      select: { id: true, name: true, email: true }
+    })
+
+    return NextResponse.json({
+      hasPendingRequest: true,
+      requester
+    })
+  } catch (error) {
+    console.error('Verification GET error:', error)
+    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getSession()

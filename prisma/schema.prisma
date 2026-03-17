@@ -18,12 +18,16 @@ model User {
   partners          User[]   @relation("UserPartner")
   sentMessages      Message[]
   receivedMessages  Message[] @relation("ReceivedMessages")
+  sentPhotos        Photo[]   @relation("SentPhotos")
+  receivedPhotos    Photo[]   @relation("ReceivedPhotos")
   isVerified        Boolean  @default(false)
   verificationOtp   String?
   otpExpiry         DateTime?
   verificationAttempts Int   @default(0)
   resetToken        String?
   resetTokenExpiry  DateTime?
+  trialStartedAt    DateTime? @default(now())
+  isPremium         Boolean  @default(false)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
@@ -64,6 +68,17 @@ model Partnership {
   user2Id String @db.ObjectId
   status  String @default("VERIFIED")
   createdAt DateTime @default(now())
+}
+
+model Photo {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  imageUrl     String
+  caption      String?  @default("")
+  senderId     String   @db.ObjectId
+  sender       User     @relation("SentPhotos", fields: [senderId], references: [id])
+  receiverId   String   @db.ObjectId
+  receiver     User     @relation("ReceivedPhotos", fields: [receiverId], references: [id])
+  createdAt    DateTime @default(now())
 }
 
 model GameRoom {

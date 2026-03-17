@@ -1,30 +1,18 @@
 'use client'
 
-import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 
 export default function LandingPage() {
   const router = useRouter()
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
 
   useEffect(() => {
     fetch('/api/auth/check')
       .then(res => res.json())
       .then(data => {
-        if (data.isLoggedIn) {
-          router.push('/home')
-        }
+        if (data.isLoggedIn) router.push('/home')
       })
       .catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      setMousePosition({ x: e.clientX, y: e.clientY })
-    }
-    window.addEventListener('mousemove', handleMouseMove)
-    return () => window.removeEventListener('mousemove', handleMouseMove)
   }, [])
 
   const startTrial = async () => {
@@ -36,7 +24,6 @@ export default function LandingPage() {
         body: JSON.stringify({ fingerprint })
       })
       const data = await response.json()
-      
       if (data.trialExhausted) {
         router.push('/login')
         return
@@ -44,273 +31,246 @@ export default function LandingPage() {
     } catch (error) {
       console.error('Trial check error:', error)
     }
-    
     sessionStorage.setItem('freshTrialStart', 'true')
     router.push('/home')
   }
 
   const features = [
-    { 
-      icon: '💬', 
-      title: 'Real-time Chat', 
-      desc: 'Send messages instantly with read receipts and typing indicators',
-      gradient: 'from-blue-400 to-blue-600'
+    {
+      icon: '💬',
+      title: 'Real-time Chat',
+      desc: 'Instant messages with read receipts and typing indicators',
+      gradient: 'from-violet-500 to-purple-600',
+      bg: 'bg-violet-50',
     },
-    { 
-      icon: '📹', 
-      title: 'HD Video Calls', 
+    {
+      icon: '📹',
+      title: 'HD Video Calls',
       desc: 'Crystal clear video calls with end-to-end encryption',
-      gradient: 'from-green-400 to-green-600'
+      gradient: 'from-blue-500 to-cyan-500',
+      bg: 'bg-blue-50',
     },
-    { 
-      icon: '🎮', 
-      title: 'Couple Games', 
-      desc: 'Play fun and intimate games together to strengthen your bond',
-      gradient: 'from-purple-400 to-purple-600',
-      link: '/couples-game'
+    {
+      icon: '🎮',
+      title: 'Couple Games',
+      desc: 'Fun and intimate games designed to strengthen your bond',
+      gradient: 'from-pink-500 to-rose-500',
+      bg: 'bg-pink-50',
+      link: '/couples-game',
     },
-    { 
-      icon: '📸', 
-      title: 'Photo Sharing', 
-      desc: 'Share your precious moments with secure photo albums',
-      gradient: 'from-pink-400 to-pink-600'
+    {
+      icon: '📸',
+      title: 'Photo Sharing',
+      desc: 'Share precious moments with secure private albums',
+      gradient: 'from-amber-500 to-orange-500',
+      bg: 'bg-amber-50',
     },
-    { 
-      icon: '💝', 
-      title: 'Love Notes', 
+    {
+      icon: '💝',
+      title: 'Love Notes',
       desc: 'Send sweet surprise messages and schedule future deliveries',
-      gradient: 'from-red-400 to-red-600'
+      gradient: 'from-rose-500 to-pink-600',
+      bg: 'bg-rose-50',
     },
-    { 
-      icon: '📅', 
-      title: 'Shared Calendar', 
+    {
+      icon: '📅',
+      title: 'Shared Calendar',
       desc: 'Plan dates, anniversaries, and special moments together',
-      gradient: 'from-indigo-400 to-indigo-600'
-    }
+      gradient: 'from-emerald-500 to-teal-500',
+      bg: 'bg-emerald-50',
+    },
+  ]
+
+  const stats = [
+    { value: '10K+', label: 'Happy Couples' },
+    { value: '99.9%', label: 'Uptime' },
+    { value: '180+', label: 'Countries' },
+    { value: '4.9★', label: 'Rating' },
   ]
 
   return (
-    <div className="min-h-screen relative overflow-hidden">
-      {/* Animated Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-love-50 via-pink-50 to-purple-50">
-        <div className="absolute inset-0 bg-pattern-hearts opacity-20" />
-        
-        {/* Interactive cursor glow */}
-        <div 
-          className="absolute w-96 h-96 bg-gradient-radial from-love-200/30 to-transparent rounded-full blur-3xl pointer-events-none transition-all duration-300 ease-out"
-          style={{
-            left: mousePosition.x - 192,
-            top: mousePosition.y - 192,
-          }}
-        />
-      </div>
+    <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #fff0f6 0%, #ffffff 40%, #f0f4ff 100%)' }}>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-          className="text-center mb-16 sm:mb-20"
-        >
-          <div className="relative inline-block">
-            <motion.h1 
-              className="text-4xl sm:text-6xl lg:text-7xl font-bold gradient-text mb-6 leading-tight"
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
-            >
-              💕 Couple Connect
-            </motion.h1>
-            
-            {/* Floating hearts around title */}
-            <div className="absolute -top-4 -left-4 text-2xl sm:text-3xl animate-bounce">
-              💖
+      {/* Nav */}
+      <nav className="sticky top-0 z-50 backdrop-blur-xl bg-white/70 border-b border-pink-100/60">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm shadow-sm">
+              💕
             </div>
-            <div className="absolute -top-2 -right-6 text-xl sm:text-2xl animate-bounce" style={{ animationDelay: '0.5s' }}>
-              ✨
-            </div>
-            <div className="absolute -bottom-2 left-8 text-lg sm:text-xl animate-bounce" style={{ animationDelay: '1s' }}>
-              💘
-            </div>
+            <span className="font-bold text-gray-900 text-lg tracking-tight">Couple Connect</span>
           </div>
-          
-          <motion.p 
-            className="text-xl sm:text-2xl lg:text-3xl text-gray-700 mb-8 sm:mb-12 max-w-4xl mx-auto leading-relaxed"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.4 }}
-          >
-            Stay connected with your 💕 <span className="gradient-text-love font-semibold">soulmate</span>, no matter the distance
-          </motion.p>
-          
-          <motion.div 
-            className="flex flex-col sm:flex-row gap-4 sm:gap-6 justify-center items-center"
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.6 }}
-          >
-            <motion.button
-              whileHover={{ scale: 1.05, boxShadow: "0 20px 40px rgba(236, 72, 153, 0.3)" }}
-              whileTap={{ scale: 0.95 }}
-              onClick={startTrial}
-              className="btn-love text-lg sm:text-xl px-8 sm:px-12 py-4 sm:py-5 relative overflow-hidden group"
-            >
-              <span className="relative z-10 flex items-center gap-2">
-                🎆 Try Free for 20 Minutes
-              </span>
-              <div className="absolute inset-0 bg-gradient-to-r from-love-600 to-pink-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            </motion.button>
-            
-            <motion.button
-              whileHover={{ scale: 1.05, backgroundColor: "rgba(255, 255, 255, 0.9)" }}
-              whileTap={{ scale: 0.95 }}
+          <div className="flex items-center gap-2">
+            <button
               onClick={() => router.push('/login')}
-              className="glass-love text-love-600 hover:text-love-700 px-8 sm:px-12 py-4 sm:py-5 rounded-full font-semibold text-lg sm:text-xl border-2 border-love-300 hover:border-love-400 transition-all duration-300"
+              className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors px-4 py-2 rounded-lg hover:bg-gray-100"
             >
-              🚀 Sign In / Sign Up
-            </motion.button>
-          </motion.div>
-          
-          {/* Trust indicators */}
-          <motion.div 
-            className="mt-8 sm:mt-12 flex flex-wrap justify-center items-center gap-4 sm:gap-8 text-sm sm:text-base text-gray-600"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8, delay: 0.8 }}
-          >
-            <div className="flex items-center gap-2">
-              🔒 <span>End-to-End Encrypted</span>
-            </div>
-            <div className="flex items-center gap-2">
-              ✨ <span>No Credit Card Required</span>
-            </div>
-            <div className="flex items-center gap-2">
-              💕 <span>10,000+ Happy Couples</span>
-            </div>
-          </motion.div>
-        </motion.div>
+              Sign In
+            </button>
+            <button
+              onClick={startTrial}
+              className="text-sm font-semibold bg-gradient-to-r from-pink-500 to-rose-500 text-white px-5 py-2.5 rounded-xl hover:opacity-90 transition-opacity shadow-sm shadow-pink-200"
+            >
+              Try Free ✨
+            </button>
+          </div>
+        </div>
+      </nav>
 
-        {/* Features Grid */}
-        <motion.div 
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8 mb-16 sm:mb-20"
-          initial={{ opacity: 0, y: 50 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.4 }}
-        >
-          {features.map((feature, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 + 0.6, duration: 0.6 }}
-              whileHover={{ y: -8, scale: 1.02 }}
-              className={`card-love p-6 sm:p-8 group cursor-pointer relative overflow-hidden ${
-                feature.link ? 'hover:shadow-glow-lg' : ''
-              }`}
-              onClick={() => feature.link && router.push(feature.link)}
+      {/* Hero */}
+      <section className="max-w-6xl mx-auto px-6 pt-20 pb-16">
+        <div className="text-center max-w-3xl mx-auto">
+          <div className="inline-flex items-center gap-2 bg-white border border-pink-200 text-pink-600 text-xs font-semibold px-4 py-2 rounded-full mb-8 shadow-sm">
+            <span className="w-1.5 h-1.5 bg-pink-500 rounded-full animate-pulse"></span>
+            No credit card required · 20 min free trial
+          </div>
+
+          <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold text-gray-900 leading-[1.1] tracking-tight mb-6">
+            Stay close,
+            <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-500 via-rose-500 to-violet-500">
+              no matter the distance
+            </span>
+          </h1>
+
+          <p className="text-lg sm:text-xl text-gray-500 mb-10 max-w-xl mx-auto leading-relaxed">
+            Chat, video call, play games, and share moments with your partner —
+            all in one private space built for couples.
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button
+              onClick={startTrial}
+              className="group relative bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold px-8 py-4 rounded-2xl hover:opacity-90 transition-all text-base shadow-lg shadow-pink-200 hover:shadow-xl hover:shadow-pink-300 hover:-translate-y-0.5"
             >
-              {/* Background gradient on hover */}
-              <div className={`absolute inset-0 bg-gradient-to-br ${feature.gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300`} />
-              
-              <div className="relative z-10">
-                <div className={`w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br ${feature.gradient} rounded-2xl sm:rounded-3xl flex items-center justify-center text-2xl sm:text-3xl mb-4 sm:mb-6 shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-110`}>
+              Try Free for 20 Minutes
+              <span className="ml-2">→</span>
+            </button>
+            <button
+              onClick={() => router.push('/login')}
+              className="bg-white border border-gray-200 text-gray-700 font-semibold px-8 py-4 rounded-2xl hover:bg-gray-50 hover:border-gray-300 transition-all text-base shadow-sm hover:-translate-y-0.5"
+            >
+              Sign In / Sign Up
+            </button>
+          </div>
+
+          <div className="mt-10 flex flex-wrap justify-center gap-5 text-sm text-gray-400">
+            <span className="flex items-center gap-1.5 bg-white/80 px-3 py-1.5 rounded-full border border-gray-100">🔒 End-to-End Encrypted</span>
+            <span className="flex items-center gap-1.5 bg-white/80 px-3 py-1.5 rounded-full border border-gray-100">⚡ Instant Setup</span>
+            <span className="flex items-center gap-1.5 bg-white/80 px-3 py-1.5 rounded-full border border-gray-100">💕 10,000+ Happy Couples</span>
+          </div>
+        </div>
+      </section>
+
+      {/* Stats */}
+      <section className="max-w-4xl mx-auto px-6 pb-16">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {stats.map((s, i) => (
+            <div key={i} className="bg-white rounded-2xl p-5 text-center border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+              <div className="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-rose-500">{s.value}</div>
+              <div className="text-xs text-gray-500 mt-1 font-medium">{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Features */}
+      <section className="py-20 px-6">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-14">
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-3 tracking-tight">
+              Everything you need to stay connected
+            </h2>
+            <p className="text-gray-500 text-lg">Built for couples who want more than just messaging</p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {features.map((feature, i) => (
+              <div
+                key={i}
+                onClick={() => feature.link && router.push(feature.link)}
+                className={`group relative bg-white rounded-2xl p-6 border border-gray-100 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-200 overflow-hidden ${
+                  feature.link ? 'cursor-pointer' : ''
+                }`}
+              >
+                {/* subtle gradient accent top */}
+                <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${feature.gradient} opacity-0 group-hover:opacity-100 transition-opacity rounded-t-2xl`} />
+
+                <div className={`w-12 h-12 ${feature.bg} rounded-2xl flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform`}>
                   {feature.icon}
                 </div>
-                <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-3 sm:mb-4 group-hover:text-gray-900 transition-colors">
-                  {feature.title}
-                </h3>
-                <p className="text-gray-600 leading-relaxed group-hover:text-gray-700 transition-colors">
-                  {feature.desc}
-                </p>
-              </div>
-              
-              {/* Hover indicator */}
-              {feature.link && (
-                <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                  <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
-                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          ))}
-        </motion.div>
+                <h3 className="font-bold text-gray-900 text-base mb-2">{feature.title}</h3>
+                <p className="text-gray-500 text-sm leading-relaxed">{feature.desc}</p>
 
-        {/* CTA Section */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 1.2, duration: 0.8 }}
-          className="relative overflow-hidden rounded-3xl sm:rounded-[2rem] p-8 sm:p-16 text-center"
-        >
-          {/* Animated background */}
-          <div className="absolute inset-0 bg-gradient-to-br from-love-500 via-pink-500 to-purple-500 animate-gradient" />
-          <div className="absolute inset-0 bg-pattern-dots opacity-20" />
-          
-          {/* Floating elements */}
-          <div className="absolute top-8 left-8 text-4xl sm:text-6xl text-white/20 animate-float">
-            💕
+                {feature.link && (
+                  <div className={`mt-4 text-xs font-semibold text-transparent bg-clip-text bg-gradient-to-r ${feature.gradient} flex items-center gap-1`}>
+                    Explore <span>→</span>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
-          <div className="absolute top-12 right-12 text-3xl sm:text-5xl text-white/20 animate-float" style={{ animationDelay: '1s' }}>
-            ✨
+        </div>
+      </section>
+
+      {/* How it works */}
+      <section className="py-20 px-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-14">
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-3 tracking-tight">Get started in seconds</h2>
+            <p className="text-gray-500 text-lg">No downloads, no setup — just connect</p>
           </div>
-          <div className="absolute bottom-8 left-16 text-2xl sm:text-4xl text-white/20 animate-float" style={{ animationDelay: '2s' }}>
-            💘
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            {[
+              { step: '01', title: 'Create your space', desc: 'Sign up in under a minute with just your email', icon: '✉️' },
+              { step: '02', title: 'Invite your partner', desc: 'Send a private invite link to your significant other', icon: '💌' },
+              { step: '03', title: 'Start connecting', desc: 'Chat, call, play games and share moments instantly', icon: '🚀' },
+            ].map((item, i) => (
+              <div key={i} className="relative bg-white rounded-2xl p-7 border border-gray-100 shadow-sm text-center">
+                <div className="text-3xl mb-3">{item.icon}</div>
+                <div className="text-xs font-bold text-pink-400 mb-2 tracking-widest">{item.step}</div>
+                <h3 className="font-bold text-gray-900 mb-2">{item.title}</h3>
+                <p className="text-gray-500 text-sm leading-relaxed">{item.desc}</p>
+                {i < 2 && (
+                  <div className="hidden sm:block absolute -right-3 top-1/2 -translate-y-1/2 text-gray-300 text-xl z-10">→</div>
+                )}
+              </div>
+            ))}
           </div>
-          <div className="absolute bottom-12 right-8 text-3xl sm:text-5xl text-white/20 animate-float" style={{ animationDelay: '0.5s' }}>
-            🌸
-          </div>
-          
-          <div className="relative z-10 text-white">
-            <motion.h2 
-              className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4 sm:mb-6"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 1.4, duration: 0.6 }}
-            >
-              Ready to Connect Hearts? 💕
-            </motion.h2>
-            
-            <motion.p 
-              className="text-lg sm:text-xl lg:text-2xl mb-8 sm:mb-10 opacity-90 max-w-3xl mx-auto leading-relaxed"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 1.6, duration: 0.6 }}
-            >
-              Join thousands of couples who've found their perfect connection. 
-              <br className="hidden sm:block" />
-              Try all features free for 20 minutes - no strings attached!
-            </motion.p>
-            
-            <motion.button
-              whileHover={{ scale: 1.05, boxShadow: "0 25px 50px rgba(0, 0, 0, 0.3)" }}
-              whileTap={{ scale: 0.95 }}
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section className="max-w-5xl mx-auto px-6 pb-24">
+        <div className="relative bg-gradient-to-br from-pink-500 via-rose-500 to-violet-600 rounded-3xl p-12 sm:p-16 text-center text-white overflow-hidden">
+          {/* decorative blobs */}
+          <div className="absolute -top-10 -left-10 w-40 h-40 bg-white/10 rounded-full blur-2xl" />
+          <div className="absolute -bottom-10 -right-10 w-56 h-56 bg-white/10 rounded-full blur-2xl" />
+
+          <div className="relative z-10">
+            <div className="text-4xl mb-4">💕</div>
+            <h2 className="text-3xl sm:text-4xl font-extrabold mb-4 tracking-tight">Ready to connect hearts?</h2>
+            <p className="text-pink-100 text-lg mb-8 max-w-xl mx-auto leading-relaxed">
+              Join thousands of couples who've found their perfect connection.
+              Try all features free — no strings attached.
+            </p>
+            <button
               onClick={startTrial}
-              className="bg-white text-love-600 hover:text-love-700 px-8 sm:px-12 py-4 sm:py-5 rounded-full font-bold text-lg sm:text-xl shadow-2xl hover:shadow-3xl transition-all duration-300 relative overflow-hidden group"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 1.8, duration: 0.6 }}
+              className="bg-white text-pink-600 font-bold px-10 py-4 rounded-2xl hover:bg-pink-50 transition-colors text-base shadow-xl hover:-translate-y-0.5 transition-transform"
             >
-              <span className="relative z-10 flex items-center gap-2 justify-center">
-                🚀 Start Your Love Journey Now
-              </span>
-              <div className="absolute inset-0 bg-gradient-to-r from-love-50 to-pink-50 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            </motion.button>
-            
-            <motion.div 
-              className="mt-6 sm:mt-8 text-sm sm:text-base opacity-80"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 2, duration: 0.6 }}
-            >
-              ✨ Instant access • No downloads required • Works on all devices
-            </motion.div>
+              Start Your Love Journey ✨
+            </button>
+            <p className="mt-5 text-pink-200 text-sm">Instant access · No downloads · Works on all devices</p>
           </div>
-        </motion.div>
-      </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-pink-100/60 py-8">
+        <div className="max-w-6xl mx-auto px-6 text-center text-gray-400 text-sm">
+          Made with 💕 for long-distance couples worldwide
+        </div>
+      </footer>
     </div>
   )
 }
