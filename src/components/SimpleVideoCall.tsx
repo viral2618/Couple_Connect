@@ -112,9 +112,12 @@ export default function SimpleVideoCall({ roomId, userId, isPremium, onClose }: 
 
       socketRef.current.on('user-left', () => {
         console.log('[WebRTC] User left')
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = null
-        }
+        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null
+      })
+
+      socketRef.current.on('user-left-video', () => {
+        console.log('[WebRTC] User left video')
+        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null
       })
 
       setIsConnecting(false)

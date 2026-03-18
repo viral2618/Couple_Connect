@@ -11,7 +11,7 @@ import { useAuth } from '@/contexts/AuthContext'
 
 export default function HomePage() {
   const router = useRouter()
-  const { user: authUser } = useAuth()
+  const { user: authUser, loading } = useAuth()
   const [showProfileDropdown, setShowProfileDropdown] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const { isOnTrial, isExpired: isTrialExpired, daysRemaining } = useTrialStatus()
@@ -21,7 +21,20 @@ export default function HomePage() {
     router.push('/login')
   }
 
-  const isPremium = authUser?.isPremium || authUser?.trial?.isActive
+  const isPremium = authUser?.isPremium || authUser?.trial?.isActive || false
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #fff0f6 0%, #ffffff 40%, #f0f4ff 100%)' }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-lg animate-pulse">
+            💕
+          </div>
+          <div className="w-5 h-5 border-2 border-pink-400 border-t-transparent rounded-full animate-spin" />
+        </div>
+      </div>
+    )
+  }
 
   const quickActions = [
     {

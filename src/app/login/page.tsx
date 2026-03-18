@@ -4,9 +4,11 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import PasswordStrength from '@/components/PasswordStrength'
 import Toast from '@/components/Toast'
+import { useAuth } from '@/contexts/AuthContext'
 
 export default function LoginPage() {
   const router = useRouter()
+  const { checkAuth } = useAuth()
   const [isSignUp, setIsSignUp] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -68,6 +70,7 @@ export default function LoginPage() {
       localStorage.setItem('user', JSON.stringify(data.user))
       setToast({ message: 'Sign in successful! Redirecting...', type: 'success', isVisible: true })
       setLoading(false)
+      await checkAuth()
       router.push('/home')
     } catch (err) {
       console.error('Frontend error:', err)

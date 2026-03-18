@@ -12,26 +12,29 @@ export async function middleware(request: NextRequest) {
   }
 
   const response = NextResponse.next()
-  
+
   try {
     const session = await getIronSession<SessionData>(request, response, sessionOptions)
+    const isLoggedIn = session.isLoggedIn === true
 
-    // Redirect to home if logged in and trying to access login page
-    if (pathname === '/' && session.isLoggedIn === true) {
+    // Redirect logged-in users away from landing/login pages
+    if ((pathname === '/' || pathname === '/login') && isLoggedIn) {
       return NextResponse.redirect(new URL('/home', request.url))
     }
 
-    // Redirect to login if not logged in and trying to access protected routes
-    if ((pathname.startsWith('/home') || pathname.startsWith('/chat')) && session.isLoggedIn !== true) {
-      return NextResponse.redirect(new URL('/', request.url))
+    // Redirect unauthenticated users away from protected routes
+    const protectedRoutes = ['/home', '/chat', '/profile', '/settings', '/partner', '/photos', '/games', '/video-call', '/notifications']
+    if (protectedRoutes.some(r => pathname.startsWith(r)) && !isLoggedIn) {
+      return NextResponse.redirect(new URL('/login', request.url))
     }
 
     return response
   } catch (error) {
     console.error('Middleware session error:', error)
-    // If session check fails, redirect to login for protected routes
-    if (pathname.startsWith('/home') || pathname.startsWith('/chat')) {
-      return NextResponse.redirect(new URL('/', request.url))
+    // On session error, only block protected routes — send to login, not landing
+    const protectedRoutes = ['/home', '/chat', '/profile', '/settings', '/partner', '/photos', '/games', '/video-call', '/notifications']
+    if (protectedRoutes.some(r => pathname.startsWith(r))) {
+      return NextResponse.redirect(new URL('/login', request.url))
     }
     return response
   }

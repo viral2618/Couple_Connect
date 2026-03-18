@@ -1,18 +1,23 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 export default function LandingPage() {
   const router = useRouter()
+  const [authChecked, setAuthChecked] = useState(false)
 
   useEffect(() => {
     fetch('/api/auth/check')
       .then(res => res.json())
       .then(data => {
-        if (data.isLoggedIn) router.push('/home')
+        if (data.isLoggedIn) {
+          router.replace('/home')
+        } else {
+          setAuthChecked(true)
+        }
       })
-      .catch(() => {})
+      .catch(() => setAuthChecked(true))
   }, [])
 
   const startTrial = async () => {
@@ -49,6 +54,7 @@ export default function LandingPage() {
       desc: 'Crystal clear video calls with end-to-end encryption',
       gradient: 'from-blue-500 to-cyan-500',
       bg: 'bg-blue-50',
+      premium: true,
     },
     {
       icon: '🎮',
@@ -88,6 +94,19 @@ export default function LandingPage() {
     { value: '4.9★', label: 'Rating' },
   ]
 
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #fff0f6 0%, #ffffff 40%, #f0f4ff 100%)' }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-lg animate-pulse">
+            💕
+          </div>
+          <div className="w-5 h-5 border-2 border-pink-400 border-t-transparent rounded-full animate-spin" />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #fff0f6 0%, #ffffff 40%, #f0f4ff 100%)' }}>
 
@@ -122,7 +141,7 @@ export default function LandingPage() {
         <div className="text-center max-w-3xl mx-auto">
           <div className="inline-flex items-center gap-2 bg-white border border-pink-200 text-pink-600 text-xs font-semibold px-4 py-2 rounded-full mb-8 shadow-sm">
             <span className="w-1.5 h-1.5 bg-pink-500 rounded-full animate-pulse"></span>
-            No credit card required · 20 min free trial
+            No credit card required · 14-day free trial
           </div>
 
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold text-gray-900 leading-[1.1] tracking-tight mb-6">
@@ -143,7 +162,7 @@ export default function LandingPage() {
               onClick={startTrial}
               className="group relative bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold px-8 py-4 rounded-2xl hover:opacity-90 transition-all text-base shadow-lg shadow-pink-200 hover:shadow-xl hover:shadow-pink-300 hover:-translate-y-0.5"
             >
-              Try Free for 20 Minutes
+              Try Free for 14 Days
               <span className="ml-2">→</span>
             </button>
             <button
@@ -195,6 +214,15 @@ export default function LandingPage() {
               >
                 {/* subtle gradient accent top */}
                 <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${feature.gradient} opacity-0 group-hover:opacity-100 transition-opacity rounded-t-2xl`} />
+
+                {feature.premium && (
+                  <div className="absolute top-3 right-3 flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold px-2 py-0.5 rounded-full">
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                    </svg>
+                    Premium
+                  </div>
+                )}
 
                 <div className={`w-12 h-12 ${feature.bg} rounded-2xl flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform`}>
                   {feature.icon}

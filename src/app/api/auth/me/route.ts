@@ -22,7 +22,11 @@ export async function GET() {
         avatar: true,
         isVerified: true,
         trialStartedAt: true,
-        isPremium: true
+        isPremium: true,
+        partnerId: true,
+        partner: {
+          select: { id: true, name: true, avatar: true }
+        }
       }
     })
 
@@ -45,6 +49,11 @@ export async function GET() {
       avatar: user.avatar ?? null,
       isVerified: user.isVerified,
       isPremium: user.isPremium,
+      partner: user.partner ? {
+        id: user.partner.id,
+        name: user.partner.name,
+        avatar: user.partner.avatar ?? undefined
+      } : undefined,
       trial: {
         isActive: isTrialActive,
         isExpired: isTrialExpired,
