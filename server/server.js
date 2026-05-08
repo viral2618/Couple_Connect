@@ -20,7 +20,7 @@ prisma.$connect()
   })
 
 const dev = process.env.NODE_ENV !== 'production'
-const port = process.env.PORT || 3000
+const port = process.env.PORT || 4000
 
 // Create Express app
 const app = express()
@@ -109,131 +109,145 @@ io.on('connection', (socket) => {
     socket.leave(roomId)
   })
 
-  // Handle room creation
-  socket.on('create_room', (data) => {
+  // Game room creation
+  socket.on('game:create-room', (data) => {
     try {
-      console.log('Create room request:', data)
-      
+      console.log('🎮 Game room creation request:', data)
       const roomCode = generateRoomCode()
-      const playerName = data.playerName || `Player_${socket.id.substring(0, 6)}`
+      const playerId = data.playerId
+      const playerName = data.playerName
       
       const room = {
         id: roomCode,
         code: roomCode,
-        host: {
-          id: playerName,
-          socketId: socket.id
-        },
-        guest: null,
         players: [{
-          id: playerName,
+          id: playerId,
           name: playerName,
-          socketId: socket.id
+          socketId: socket.id,
+          score: 0,
+          isOwner: true
         }],
-        gameState: 'waiting',
-        hostId: playerName,
-        currentGame: 'menu',
-        currentRound: 0,
-        maxRounds: 3,
-        scores: { [playerName]: 0 }
+        gameType: null,
+        gameState: {
+          status: 'waiting',
+          currentRound: 1,
+          totalRounds: 10,
+          currentQuestion: null,
+          answers: {},
+          scores: {},
+          currentTurn: null
+        },
+        createdAt: Date.now(),
+        maxPlayers: 2
       }
       
       rooms.set(roomCode, room)
       socket.join(roomCode)
       
-      const roomCreatedData = {
-        roomId: roomCode,
-        roomCode: roomCode,
-        room: {
-          id: room.id,
-          code: room.code,
-          host: { id: room.host.id },
-          players: room.players.map(p => ({ id: p.id, name: p.name })),
-          gameState: room.gameState,
-          currentGame: room.currentGame,
-          scores: { ...room.scores }
-        }
-      }
-      
-      socket.emit('room_created', roomCreatedData)
-      console.log('Room created:', roomCode, 'by', playerName)
+      socket.emit('game:room-updated', room)
+      console.log('✅ Game room created:', roomCode)
     } catch (error) {
-      console.error('Error creating room:', error)
-      socket.emit('error', { message: error.message })
+      console.error('❌ Error creating game room:', error)
+      socket.emit('game:error', { message: error.message })
     }
   })
 
-  // Handle room joining
-  socket.on('join_room', (data) => {
+  // Game room joining
+  socket.on('game:join-room', (data) => {
     try {
-      console.log('Join room request:', data)
+      console.log('🚪 Game room join request:', data)
+      const room = rooms.get(data.code)
       
-      const room = rooms.get(data.roomCode)
       if (!room) {
-        socket.emit('error', { message: 'Room not found' })
+        socket.emit('game:error', { message: 'Room not found' })
         return
       }
       
-      if (room.guest) {
-        socket.emit('error', { message: 'Room is full' })
+      if (room.players.length >= room.maxPlayers) {
+        socket.emit('game:error', { message: 'Room is full' })
         return
-      }
-      
-      const playerName = data.playerName || `Player_${socket.id.substring(0, 6)}`
-      
-      room.guest = {
-        id: playerName,
-        socketId: socket.id
       }
       
       room.players.push({
-        id: playerName,
-        name: playerName,
-        socketId: socket.id
+        id: data.playerId,
+        name: data.playerName,
+        socketId: socket.id,
+        score: 0,
+        isOwner: false
       })
       
-      room.scores[playerName] = 0
-      socket.join(data.roomCode)
+      socket.join(data.code)
+      io.to(data.code).emit('game:room-updated', room)
+      console.log('✅ Player joined game room:', data.code)
+    } catch (error) {
+      console.error('❌ Error joining game room:', error)
+      socket.emit('game:error', { message: error.message })
+    }
+  })
+
+  // Game selection
+  socket.on('game:select-game', (data) => {
+    try {
+      console.log('🎯 Game selection:', data)
+      const room = rooms.get(data.code)
       
-      const roomJoinedData = {
-        roomId: data.roomCode,
-        roomCode: data.roomCode,
-        room: {
-          id: room.id,
-          code: room.code,
-          host: { id: room.host.id },
-          guest: room.guest ? { id: room.guest.id } : null,
-          players: room.players.map(p => ({ id: p.id, name: p.name })),
-          gameState: room.gameState,
-          currentGame: room.currentGame,
-          scores: { ...room.scores }
+      if (!room) {
+        socket.emit('game:error', { message: 'Room not found' })
+        return
+      }
+      
+      room.gameType = data.gameType
+      room.gameState.status = 'playing'
+      
+      io.to(data.code).emit('game:room-updated', room)
+      console.log('✅ Game selected:', data.gameType)
+    } catch (error) {
+      console.error('❌ Error selecting game:', error)
+      socket.emit('game:error', { message: error.message })
+    }
+  })
+
+  // Leave game room
+  socket.on('game:leave-room', (data) => {
+    try {
+      const room = rooms.get(data.code)
+      if (room) {
+        room.players = room.players.filter(p => p.id !== data.playerId)
+        if (room.players.length === 0) {
+          rooms.delete(data.code)
+        } else {
+          io.to(data.code).emit('game:room-updated', room)
         }
       }
-      
-      socket.emit('room_joined', roomJoinedData)
-      
-      const roomUpdateData = {
-        id: room.id,
-        code: room.code,
-        host: { id: room.host.id },
-        guest: room.guest ? { id: room.guest.id } : null,
-        players: room.players.map(p => ({ id: p.id, name: p.name })),
-        gameState: room.gameState,
-        currentGame: room.currentGame,
-        scores: { ...room.scores }
-      }
-      
-      io.to(data.roomCode).emit('room-update', roomUpdateData)
-      console.log('Player', playerName, 'joined room:', data.roomCode)
+      socket.leave(data.code)
     } catch (error) {
-      console.error('Error joining room:', error)
-      socket.emit('error', { message: error.message })
+      console.error('❌ Error leaving game room:', error)
     }
   })
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id)
+    
+    // Clean up game rooms
     for (const [roomCode, room] of rooms.entries()) {
+      const playerIndex = room.players?.findIndex(p => p.socketId === socket.id)
+      
+      if (playerIndex !== undefined && playerIndex !== -1) {
+        const player = room.players[playerIndex]
+        room.players.splice(playerIndex, 1)
+        
+        if (room.players.length === 0) {
+          // Delete empty room
+          rooms.delete(roomCode)
+          console.log('🗑️ Empty game room deleted:', roomCode)
+        } else {
+          // Notify remaining players
+          io.to(roomCode).emit('game:room-updated', room)
+          console.log('🚪 Player left game room:', roomCode)
+        }
+      }
+      
+      // Legacy room cleanup
       if (room.host && room.host.socketId === socket.id) {
         if (room.gameData && room.gameData.timer) {
           clearTimeout(room.gameData.timer)
@@ -242,17 +256,19 @@ io.on('connection', (socket) => {
         io.to(roomCode).emit('room_closed', { reason: 'Host disconnected' })
       } else if (room.guest && room.guest.socketId === socket.id) {
         room.guest = null
-        room.players = room.players.filter(p => p.socketId !== socket.id)
+        if (room.players) {
+          room.players = room.players.filter(p => p.socketId !== socket.id)
+        }
         
         const roomUpdateData = {
           id: room.id,
           code: room.code,
-          host: { id: room.host.id },
+          host: room.host ? { id: room.host.id } : null,
           guest: null,
-          players: room.players.map(p => ({ id: p.id, name: p.name })),
+          players: room.players ? room.players.map(p => ({ id: p.id, name: p.name })) : [],
           gameState: room.gameState,
           currentGame: room.currentGame,
-          scores: { ...room.scores }
+          scores: room.scores || {}
         }
         
         io.to(roomCode).emit('room-update', roomUpdateData)

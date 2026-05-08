@@ -10,17 +10,15 @@
     "dev": "npm run dev --workspace=apps/web & npm run dev --workspace=apps/api",
     "dev:web": "npm run dev --workspace=apps/web",
     "dev:api": "npm run dev --workspace=apps/api",
-    "build": "npm run build --workspace=packages/database && npm run build --workspace=apps/web && npm run build --workspace=apps/api",
+    "build": "npm run build --workspaces",
     "build:web": "npm run build --workspace=apps/web",
     "build:api": "npm run build --workspace=apps/api",
-    "start": "npm run start:web & npm run start:api",
-    "start:web": "npm run start --workspace=apps/web",
-    "start:api": "npm run start --workspace=apps/api",
+    "start": "npm run start --workspaces",
+    "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules",
+    "setup": "npm install && npm run db:generate",
     "db:generate": "npm run generate --workspace=packages/database",
     "db:push": "npm run push --workspace=packages/database",
-    "db:migrate": "npm run migrate --workspace=packages/database",
-    "test:setup": "node test-setup.js",
-    "railway:deploy": "railway up"
+    "db:migrate": "npm run migrate --workspace=packages/database"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

@@ -1,0 +1,19 @@
+{
+  "phases": {
+    "setup": {
+      "nixPkgs": ["nodejs-18_x", "python3"]
+    },
+    "install": {
+      "cmds": ["npm install"]
+    },
+    "build": {
+      "cmds": [
+        "npx prisma generate",
+        "npm run build"
+      ]
+    }
+  },
+  "start": {
+    "cmd": "npm run start:web & npm run start:api"
+  }
+}
